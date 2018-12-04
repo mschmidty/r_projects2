@@ -1,0 +1,295 @@
+---
+title: "Stock Indicators with TTR"
+author: "Mike Schmidt"
+date: "5/29/2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Load necessary packages
+```{r}
+options(scipen=999)
+library(TTR)
+library(quantmod)
+library(tidyverse)
+library(RcppRoll)
+require(tidyquant)
+library(randomForest)
+```
+
+## Pick Stock
+```{r}
+stock <- "COST"
+```
+
+
+## Download Stock data
+Dates 2005 to April 2018
+```{r}
+
+start<-as.Date("1990-01-01")
+end<-as.Date("2018-08-19")
+data<-getSymbols(stock, src="yahoo", auto.assign = FALSE, from=start, to=end)
+df<-data.frame(date=index(data), coredata(data))
+
+data_cl<-df%>%
+  rename(open=2, high=3, low=4, close=5, volume=6, adjusted=7)%>%
+  mutate(id = row_number())
+tail(data_cl)
+
+```
+
+
+### Calculate RSI
+RSI is a popular momentum indicator which determines whether the stock is overbought or oversold. A stock is said to be overbought when the demand unjustifiably pushes the price upwards. This condition is generallyt interpreted as a sign that the stock is overvalued and the price is likely to go down. A stock is said to be oversold when the price goes down sharply to a level below its true value. This is a result caused due to panic selling. RSI ranges from 0 to 100 and generally, when RSI is above 70, it may indicate that the stock is overbought and when RSI is below 30, it may indicate the stock is oversold.
+
+```{r}
+rsi<-as.data.frame(RSI(data_cl$close))%>%
+  mutate(id=data_cl$id)%>%
+  rename(rsi=1)
+rsi
+```
+
+## Plot Data
+Plot RSI to see what it looks like
+```{r}
+# ggplot(data=data1, aes(x=date, y=RSI))+
+#   geom_line(color="#444444", size=1)+
+#   theme_classic()
+```
+
+
+## Calculate Stochastic Oscillator
+Stochastic Oscillator follows the speed or the momentum of the price. As a rule,
+momentum changes before the price changes. It measures the level of the closing price
+relative to low-high range over a period of time.
+
+```{r}
+stoch<- as.data.frame(stoch(data_cl[,c("high", "low", "close")]))%>%
+  mutate(id=data_cl$id)
+stoch
+
+```
+
+
+```{r}
+# ggplot(data=stoch, aes(x=date))+
+#   geom_line(aes(y=fastK), color="blue")+
+#   geom_line(aes(y=fastD), color="red")+
+#   geom_line(aes(y=slowD), color="green")+
+#   theme_classic()
+```
+
+## Calculate williams R
+Williams %R ranges from -100 to 0. When its value is above -20, it indicates a sell signal and when its value is below -80, it indicates a buy signal.
+```{r}
+wpr<-as.data.frame(WPR(data_cl[,c("high", "low", "close")]))%>%
+  mutate(id=data_cl$id)
+
+wpr<-rename(wpr, WPR = 1)
+wpr
+```
+
+
+```{r}
+# ggplot(data=wpr, aes(x=date, y=WPR))+
+#   geom_line()+
+#   theme_classic()
+```
+
+## Moving Average Oscillator
+```{r}
+macd<-as.data.frame(MACD(data_cl$close))%>%
+  mutate(id=data_cl$id)
+macd
+```
+
+```{r}
+# ggplot(macd, aes(x=date))+
+#   geom_line(aes(y=macd), color="red")+
+#   geom_line(aes(y=signal), color="blue")+
+#   theme_classic()
+```
+
+## Price Rate of Change
+
+```{r}
+roc<-as.data.frame(ROC(data_cl$close))%>%
+  mutate(id=data_cl$id)%>%
+  rename(roc=1)
+roc
+```
+
+```{r}
+# ggplot(data=roc, aes(x=date, y=roc))+
+#   geom_line()+
+#   theme_classic()
+```
+
+
+## On Balance Volume
+```{r}
+obv<-as.data.frame(OBV(data_cl$close, data_cl$volume))%>%
+  mutate(id=data_cl$id)%>%
+  rename(obv=1)
+obv
+```
+
+
+```{r}
+# ggplot(data=obv, aes(x=date, y=obv))+
+#   geom_line()+
+#   theme_classic()
+```
+
+## Find 52 week high and 52 Week low. 
+
+
+
+
+## Join Dataset
+```{r}
+data_joined<-data_cl%>%
+  left_join(obv, by="id")%>%
+  left_join(roc, by="id")%>%
+  left_join(macd, by="id")%>%
+  left_join(rsi, by="id")%>%
+  left_join(stoch, by="id")
+data_joined
+```
+# Create Simple indicators
+```{r}
+data<-data_joined%>%
+  ## calculate the gain for the day
+  mutate(gain_loss=open-close)%>%
+  
+  ## calculate the percent gain/loss for the day
+  mutate(percent_gain_loss=gain_loss/open*100)%>%
+  
+  ## 52 week calculations
+  ### - calculate the 52 week high
+  mutate(max52week=roll_max(high, n=252, align="right", fill=NA, na.rm=FALSE))%>%
+  ### - calculate a 1 for when the 52 week high is, all other times are 0 even NAs (very important to make NAs 0 or else the count from last high will not work.)
+  mutate(max52occured=as.integer(if_else(max52week==high,1,0, 0)))%>%
+  ### - the difference between the 52 week max and the close
+  mutate(difPerc52max=(max52week-close)/max52week)%>%
+  ### - count sequentially how many days it has been since the 52 week high. 
+  mutate(panel="a")%>%
+  group_by(panel, idx=cumsum(max52occured==1L))%>%
+  mutate(since52weekHigh=row_number())%>%
+  ungroup%>%
+  select(-idx)%>%
+  
+  ## Calculate the 52 week min (same variables were calculated for min as max)
+  mutate(min52week=roll_min(low, n=252, align="right", fill=NA, na.rm=FALSE))%>%
+  mutate(min52occured=as.integer(if_else(min52week==low,1,0,0)))%>%
+  mutate(difPerc52min=(close-min52week)/min52week)%>%
+  group_by(panel, idx=cumsum(min52occured==1L))%>%
+  mutate(since52weekLow=row_number())%>%
+  ungroup%>%
+  select(-idx, -panel)%>%
+  
+  ## calculate the classifyers used for randomForests
+  ### - make 15 and 30 moving windows. 
+  mutate(window15=roll_sum(percent_gain_loss, n=15, align="left", fill=NA, na.rm=FALSE))%>%
+  mutate(window30=roll_sum(percent_gain_loss, n=30, align="left", fill=NA, na.rm=FALSE))%>%
+  
+  ### - creates 4 categories for the 15 moving window analysis: 0 == if window is less than 0 (stock was negative for last 15 days), 1 == if stock went up by more than 0% but less than 10% over the last 15 days, 2 == if stock went up between 10% and 20%, and 3 == stock went up more than 30%. 
+  mutate(classify15=if_else(window15<0, 0 , if_else(window15>0 & window15<10, 1, if_else(window15>10 & window15<20, 2, 3, NA_real_ ))))%>%
+  ### - same as last but for 30 days
+  mutate(classify30=if_else(window30<0, 0 , if_else(window30>0 & window30<10, 1, if_else(window30>10 & window30<20, 2, 3, NA_real_ ))))%>%
+  
+  ### - these are just easy classifyers, if stock goes up assign 1 if stock goes down classify as 0 for 15 sand 30 day windows. 
+  mutate(classify15easy=if_else(window15<10, 0 , 1, NA_real_ ))%>%
+  mutate(classify30easy=as.integer(if_else(window30<10, 0 , 1, NA_real_ )))
+  
+  
+  
+
+data
+tail(data)
+```
+
+```{r}
+# ggplot(data, aes(x=date))+
+#   geom_line(aes(y=window15), color="blue")+
+#   geom_line(aes(y=window30), color="red")
+```
+
+## Running Alpha
+```{r}
+shares<-10
+money<-data%>%
+  mutate(price_simple = shares*close)%>%
+  group_by(idx=cumsum(classify30easy==1L))%>%
+  select(date, price_simple, idx)
+  
+money
+tail(money)
+
+
+```
+
+
+##Run Random Forest
+
+subset the dataset
+```{r}
+data_rf<-data%>%
+  select(obv:slowD, since52weekHigh, difPerc52max, difPerc52min, since52weekLow, classify15easy)%>%
+  na.omit()
+data_rf
+number_of_ones<-table(data_rf$classify15easy)
+number_of_ones[, 2 ]
+```
+
+## Need to change the 
+```{r}
+set.seed(415)
+
+fit15<-randomForest(as.factor(classify15easy)~ . , 
+                  data=data_rf, 
+                  ntree=1000, 
+                  importance=TRUE, 
+                  sampsize=c(334, 334), ## This variable must be changed to not exceed the above data_rf$classify15easy
+                  mtry=12)
+
+fit15
+varImpPlot(fit15)
+
+```
+
+
+##Run Random Forest on Window30
+
+subset the dataset
+```{r}
+data_rf_30<-data%>%
+  select(obv:slowD, since52weekHigh, difPerc52max, difPerc52min, since52weekLow, classify30easy)%>%
+  na.omit()
+data_rf_30
+table(data_rf_30$classify30easy)
+```
+
+```{r}
+set.seed(415)
+
+fit30<-randomForest(as.factor(classify30easy)~ . , 
+                  data=data_rf_30, 
+                  ntree=1000, 
+                  sampsize=c(560, 560), ## Need to make this happen programmitically. 
+                  importance=TRUE, 
+                  mtry=12)
+
+fit30
+varImpPlot(fit30)
+
+```
+

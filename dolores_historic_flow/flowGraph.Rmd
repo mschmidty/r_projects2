@@ -1,0 +1,50 @@
+---
+title: "Untitled"
+author: "Mike Schmidt"
+date: "10/26/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup}
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+data<-read_tsv("https://waterservices.usgs.gov/nwis/dv/?format=rdb&sites=09166500&startDT=1986-10-02&endDT=2018-10-31&siteStatus=all", comment="#")
+data<-data[-1,]
+data
+```
+
+```{r}
+plot_data<-data%>%
+  mutate(date=ymd(datetime))%>%
+  mutate(dayDate=yday(date))%>%
+  rename(flow=4)%>%
+  mutate(averageFlow=as.numeric(gsub(",", "", flow)))%>%
+  select(date, averageFlow, dayDate)%>%
+  mutate(year=year(date))
+```
+```{r}
+average_data<-plot_data%>%
+  group_by(dayDate)%>%
+  summarize(mean=mean(averageFlow))
+```
+
+```{r}
+ggplot()+
+  theme_bw(base_size = 11)+
+  geom_line(data=plot_data, aes(x=dayDate, y=averageFlow, group=year ), color="#666666", alpha=0.125)+
+  geom_line(data=filter(plot_data, year==2018), aes(x=dayDate, y=averageFlow), size=1, color="#181177")+
+  geom_line(data=average_data, aes(x=dayDate, y=mean), size=1, color="#BADA55")+
+  theme(axis.line = element_line(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank())+
+  labs(y = "cfs", x="Date", title = "Animas River Stream Gauge Data at Durango", subtitle = "Source: USGS")+
+  scale_color_manual( 
+                     values = c("Historic" = "#666666", "2017" = "#31ff26", "2018" = "#f47142", "Average" = "#181177"))
+```
+
+

@@ -1,0 +1,91 @@
+---
+title: "Dolores_Historic_Flow"
+author: "Mike Schmidt"
+date: "5/15/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(lubridate)
+library(zoo)
+```
+
+##Load the Json Data
+```{r}
+data <- read.csv("data3.csv",stringsAsFactors=FALSE)
+head(data)
+data2<-data
+```
+
+
+```{r}
+data2$DateTime<-as.Date(data2$DateTime)
+data2
+```
+
+
+```{r}
+data2$Year<-format(data2$Date, "%Y")
+data2
+```
+##dataclean
+```{r}
+data2$flow<-as.numeric(gsub(",", "", data2$X19090.00060.00003))
+data2$Month <- months(data2$DateTime)
+data2$Day<-yday(data2$DateTime)
+data2$rollMean<-rollmean(data2$flow, 4, fill =  NA)
+data2
+data3<-data2
+data3<-data3[complete.cases(data3), ]
+data3
+```
+
+##Average Months
+```{r}
+monthAvg<-aggregate(flow~Month+Year, data2, mean)
+monthAvg
+
+dayAverageTotal<-aggregate(flow~Day, data3, mean)
+dayAverageTotal
+```
+
+
+
+##subset data
+```{r}
+subData<-data2 %>% filter(Year>2016)
+subData
+
+data2017<-filter(data3, Year>2016 & Year<2018)
+
+data2018<- filter(data3, Year>2017)
+data2018
+```
+
+
+```{r}
+ggplot()+
+  theme_bw(base_size = 11)+
+  geom_line(data=data3, aes(x=Day, y=rollMean, group=Year ), color="#666666", alpha=0.125)+
+  geom_line(data=dayAverageTotal, aes(x=Day, y=flow), size=1, color="#181177")+
+  geom_line(data=data2018, aes(x=Day, y=rollMean), size=1, color="#f47142")+
+  geom_line(data=data2017, aes(x=Day, y=rollMean), size=1, color="#31ff26")+
+  theme(axis.line = element_line(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank())+
+  labs(y = "cfs", title = "Dolores River Stream Gauge Data at Dolores", subtitle = "Source: USGS")+
+  scale_color_manual( 
+                     values = c("Historic" = "#666666", "2017" = "#31ff26", "2018" = "#f47142", "Average" = "#181177"))
+
+  
+  
+```
+
+```{r}
+ggsave("finalGraph3.jpg", plot = last_plot(), width=6, height=3)
+```
+

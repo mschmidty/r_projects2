@@ -1,0 +1,64 @@
+---
+title: "Untitled"
+author: "Mike Schmidt"
+date: "12/2/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(tidyverse)
+
+data<-read_csv("https://wcc.sc.egov.usda.gov/reportGenerator/view_csv/customMultiTimeSeriesGroupByStationReport/hourly/start_of_period/840:CO:SNTL%7Cid=%22%22%7Cname/-167,0/SNWD::value?fitToScreen=false", comment = "#")%>%
+  rename(Depth=2)%>%
+  mutate(Snotel="Upper San Juan")
+
+el_diente<-read_csv("https://wcc.sc.egov.usda.gov/reportGenerator/view_csv/customMultiTimeSeriesGroupByStationReport/hourly/start_of_period/465:CO:SNTL%7Cid=%22%22%7Cname/-167,0/SNWD::value?fitToScreen=false", comment = "#")%>%
+  rename(Depth=2)%>%
+  mutate(Snotel="El Diente")
+
+columbus<-read_csv("https://wcc.sc.egov.usda.gov/reportGenerator/view_csv/customMultiTimeSeriesGroupByStationReport/hourly/start_of_period/904:CO:SNTL%7Cid=%22%22%7Cname/-167,0/SNWD::value?fitToScreen=false", comment = "#")%>%
+  rename(Depth=2)%>%
+  mutate(Snotel="Columbus")
+data
+```
+
+
+```{r}
+datadata%>%
+  left_join(el_diente, by="Date")%>%
+  left_join(columbus, by = "Date")%>%
+  rename(Upper_SJ=2, El_Diente=3, Columbus=4)
+```
+
+```{r}
+data%>%
+  mutate(accum_last_72=max(Depth)-min(Depth))
+```
+
+
+```{r}
+el_diente%>%
+  summarize(max=max(Depth), min=min(Depth))
+```
+
+
+```{r}
+all_sites<-rbind(data, el_diente, columbus)
+all_sites
+```
+
+```{r}
+all_sites%>%
+  ggplot(aes(x=Date, y=Depth))+
+  stat_smooth(aes(color=Snotel, fill=Snotel))+
+  theme_classic()+
+  xlab("")+
+  ylab("Depth in Inches")+
+  labs(title="Upper San Juan Snotel Snow Depth")
+```
+
+
+
