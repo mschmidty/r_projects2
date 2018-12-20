@@ -72,8 +72,7 @@ data%>%
 ```{r}
 data%>%
   rename(Zone=6)%>%
-  filter(Zone!=is.na(Zone))%>%
-  group_by(Zone)%>%
+  group_by()%>%
   summarize(perc=n())%>%
   arrange(desc(perc))%>%
   ggplot(aes(x=reorder(Zone, perc), y=perc))+
@@ -94,6 +93,34 @@ data%>%
           plot.background = element_rect(fill = "#f9f9f9"),
           panel.background = element_rect(fill="#f9f9f9"))
 ```
+
+```{r}
+data%>%
+  rename(Zone=6)%>%
+  filter( Elev!="All", Elev!="U")%>%
+  filter(Asp!= is.na(Asp) & Asp!= "U" & Asp!="All" & Asp!="Unknown")%>%
+  group_by(Asp, Elev)%>%
+  summarize(perc=n())%>%
+  arrange(desc(perc))%>%
+  ggplot(aes(x=Asp, y=perc))+
+    geom_bar(aes(fill=Elev), stat="identity" )+
+    coord_flip()+
+    theme_classic()+
+    xlab("")+
+    ylab("")+
+    labs(title="Colorado Avalanches by Range", 
+         subtitle = "Reported Avalanches in Colorado From 1981 through the winter of 2017",
+         caption = "Data From Colorado Avalanche Information Center")+
+    theme(axis.line.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          text=element_text( family="Source Sans Pro", size=16), 
+          plot.title=element_text(face="bold"),
+          plot.subtitle=element_text(size=14, color="#555555", family="Source Sans Pro Light"),
+          plot.caption=element_text(size=12, color="#555555"),
+          plot.background = element_rect(fill = "#f9f9f9"),
+          panel.background = element_rect(fill="#f9f9f9"))
+```
+
 
 
 
