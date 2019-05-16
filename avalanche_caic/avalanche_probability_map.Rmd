@@ -1,0 +1,59 @@
+---
+title: "Untitled"
+author: "Mike Schmidt"
+date: "12/10/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I had a buddy trigger an avalanche this weekend.  This is my attempt at using DEM and arial imagery to predict where it is safe and fun to ski and where it is not. 
+
+### Load the libraries
+
+```{r}
+library(raster)
+library(dplyr)
+```
+
+```{r}
+r1<-brick("/Volumes/MikeHD/maps/DEM/30m/grdn38w109_1")
+plot(r1)
+```
+
+```{r}
+terrain<-terrain(r1, opt=c("slope", "aspect"), unit='degrees', neighbors=4)
+plot(terrain$slope)
+```
+
+
+```{r}
+brick<-addLayer(terrain, r1)
+names(brick)<-c("slope", "aspect", "elevation")
+plot(brick)
+```
+
+
+```{r}
+r_table<-rasterToPoints(brick)
+r_table_t<-as.data.frame(r_table)
+```
+
+```{r}
+avalanche_analysis<-r_table_t%>%
+  filter(elevation>2300)%>%
+  filter(!is.na(slope))%>%
+  mutate(treeline=ifelse(elevation<3500 & elevation >3200, 1, ifelse(elevation>=3500, 2, 0) ))%>%
+  mutate(slope_prob=ifelse(slope>34 & slope<45, 1, 0))%>%
+  mutate(aspect_prob = ifelse(aspect<110 | aspect>330, 1, 0))%>%
+  mutate(avalanche_prob = treeline+slope_prob+aspect_prob)
+avlan
+```
+
+```{r}
+avalanche_analysis%>%
+  select(x, y, avalanche_prob )
+```
+

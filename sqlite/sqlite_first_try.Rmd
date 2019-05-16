@@ -1,0 +1,43 @@
+---
+title: "Working With SQLite3 Files"
+author: "Mike Schmidt"
+date: "12/18/2018"
+output: html_document
+---
+
+
+```{r}
+library(RSQLite)
+library(tidyverse)
+library(googlesheets)
+```
+
+### Read the database
+```{r}
+database<-dbConnect(drv=RSQLite::SQLite(), dbname="db.sqlite3")
+dbListTables(database)
+```
+## Read a table
+```{r}
+table<-dbReadTable(database, "flows_river")
+table
+```
+
+```{r}
+gs_ls()
+drive_rivers<-gs_title("river csv")
+gs_ws_ls(drive_rivers)
+g_rivers<-gs_read(ss=drive_rivers, ws="Sheet1")
+river_bind<-g_rivers%>%
+  mutate(id=as.integer(seq(4,9)))%>%
+  select(id, usgs_number, river_name)
+river_bind
+combined<-rbind(table, river_bind)
+```
+
+## Write to SQLite
+```{r}
+dbWriteTable(database, "flows_river", combined, overwrite=T)
+dbDisconnect(database)
+```
+
