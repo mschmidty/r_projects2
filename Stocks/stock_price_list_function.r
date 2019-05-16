@@ -3,8 +3,9 @@ library(quantmod)
 library(lubridate)
 library(TTR)
 library(RcppRoll)
+library(randomForest)
 
-stock_list<- c("FB", "COST", "NFLX")
+stock_list<- c("FB", "NFLX")
 
 end_date<-as.Date(today())
 start_date<-as.Date("1990-01-01")
@@ -66,11 +67,24 @@ stock_price_rf<-function(ticker, st_date, e_date){
     ### - these are just easy classifyers, if stock goes up assign 1 if stock goes down classify as 0 for 15 sand 30 day windows. 
     mutate(classify15easy=if_else(window15<10, 0 , 1, NA_real_ ))%>%
     mutate(classify30easy=as.integer(if_else(window30<10, 0 , 1, NA_real_ )))%>%
-    drop_na()
-  return(ind)
+    drop_na()%>%
+    select(obv:slowD, since52weekHigh, difPerc52max, difPerc52min, since52weekLow, classify30easy)
+  
+  sampsize_min<-count(ind, as.factor(classify30easy))
+  
+  rf<-randomForest(as.factor(classify30easy)~ . , 
+                   data=ind, 
+                   ntree=1000, 
+                   sampsize=c(min(sampsize_min$n), min(sampsize_min$n)), ## Need to make this happen programmitically. 
+                   importance=TRUE)
+  return(rf)
 }
 
 test<-stock_price_rf("FB", start_date, end_date)
 
+test_list<- lapply(stock_list, stock_price_rf, start_date, end_date)
 head(test)
 View(test)
+
+test1<-count(test, as.factor(classify30easy))
+min(test1$n)
