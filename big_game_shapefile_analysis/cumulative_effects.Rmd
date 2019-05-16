@@ -1,0 +1,117 @@
+---
+title: "Deer and Elk Habitat Analysis"
+author: "Michael Schmidt"
+date: "April 18, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(sf)
+library(tools)
+```
+
+List files to load
+```{r}
+all_files<-list.files("shapefiles", full.names=T)%>%
+  file_path_sans_ext()%>%
+  file_path_sans_ext()%>%
+  unique()%>%
+  as.tibble()
+```
+
+separate files
+```{r}
+ownership_files<-all_files%>%
+  filter(str_detect(value,"Ownership"))
+
+dau_files<-all_files%>%
+  filter(!str_detect(value,"Ownership"))
+```
+
+```{r}
+read_shp_extract_table<-function(file_path){
+  st_read(dirname(file_path), basename(file_path))%>%
+    st_set_geometry(NULL)%>%
+    as_tibble()%>%
+    mutate(source=basename(file_path))
+}
+  
+```
+
+read all of the files
+```{r}
+ownership_list<-lapply(ownership_files$value, read_shp_extract_table)
+dau_list<-lapply(dau_files$value, read_shp_extract_table)
+```
+
+bind columns
+```{r}
+ownership_acres<-bind_rows(ownership_list)
+dau_list<-bind_rows(dau_list)
+```
+
+Ownership analysis
+```{r}
+ownership_base<-ownership_acres%>%
+  select(adm_manage, GIS_acres, source)%>%
+  mutate(temp_col = str_split(source, "_"))%>%
+  rowwise()%>%
+  mutate(DAU = trimws(unlist(temp_col)[2]))%>%
+  mutate(Type = paste0(unlist(temp_col)[4], "_" , unlist(temp_col)[5]))%>%
+  select(-temp_col)
+
+disturbance_erase<-ownership_base%>%
+  filter(str_detect(source, "Disturbance|Distrubance|Disturbace"))%>%
+  mutate(analysis_type="disturbance_erase")
+
+no_erase<-ownership_base%>%
+  filter(!str_detect(source, "Disturbance|Distrubance|Disturbace"))%>%
+  mutate(analysis_type="no_erase")
+
+final_ownership_data<-bind_rows(disturbance_erase, no_erase)%>%
+  select(-source)
+```
+
+```{r}
+total_disturb_winter<-final_ownership_data%>%
+  filter(analysis_type!="disturbance_erase")%>%
+  group_by(DAU, Type)%>%
+  summarise(sum=sum(GIS_acres))%>%
+  left_join(
+    final_ownership_data%>%
+      filter(analysis_type!="no_erase")%>%
+      group_by(DAU, Type)%>%
+      summarise(sum=sum(GIS_acres)), 
+    by=c("DAU", "Type")
+  )%>%
+  rename(total_acres=sum.x, refuge_acres=sum.y)%>%
+  mutate(percent_disturbed=(total_acres-refuge_acres)/total_acres)
+
+write.csv(total_disturb_winter, "total_disturb_winter.csv")
+  
+```
+
+```{r}
+final_ownership_data%>%
+  filter(analysis_type!="disturbance_erase" & adm_manage=="BLM")%>%
+  group_by(DAU, Type)%>%
+  summarise(sum=sum(GIS_acres))%>%
+  left_join(
+    final_ownership_data%>%
+      filter(analysis_type!="no_erase" & adm_manage=="BLM")%>%
+      group_by(DAU, Type)%>%
+      summarise(sum=sum(GIS_acres)), 
+    by=c("DAU", "Type")
+  )%>%
+  rename(total_acres=sum.x, refuge_acres=sum.y)%>%
+  mutate(percent_disturbed=(total_acres-refuge_acres)/total_acres)%>%
+  write_csv("blm_disturb_winter.csv")
+```
+
+
+

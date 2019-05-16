@@ -53,11 +53,16 @@ all_sites
 ```{r}
 all_sites%>%
   ggplot(aes(x=Date, y=Depth))+
-  stat_smooth(aes(color=Snotel, fill=Snotel))+
+  stat_smooth(aes(color=Snotel))+
   theme_classic()+
   xlab("")+
   ylab("Depth in Inches")+
-  labs(title="Upper San Juan Snotel Snow Depth")
+  labs(title="Colorado Snotel Snow Depth")+
+  scale_color_manual(
+      values = c(
+           Columbus="#FFC300",
+           "El Diente"="#FF5733",
+          "Upper San Juan"="#900C3F" ))
 ```
 
 
