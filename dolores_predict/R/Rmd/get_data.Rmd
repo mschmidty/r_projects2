@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(tidyverse)
 library(RNRCS)
-##library(fable)
+library(fable)
 library(readr)
 library(lubridate)
 options(scipen = 999)
@@ -32,7 +32,7 @@ dolores_site_ids<-dolores_sites%>%
   as.numeric()
 ```
 
-
+## Get snotel Sites
 ```{r}
 data_test<-grabNRCS.data(network = "SNTL", 
               site_id = 1185, 
@@ -63,18 +63,62 @@ se_site<-all_sntl_data%>%
     Year = year(Date)
     )%>%
   rename(snow_depth = 2, snow_water_eq=3)%>%
+  filter(site_id_num %in% c(465, 586, 589, 739))
+
+se_site_yr<-se_site%>%
   group_by(year(Date), site_id_num)%>%
   summarize(max_se = max(snow_water_eq, na.rm = T))%>%
   ungroup()%>%
   rename(year=1)
 
-avg_snwater_eq<-se_site%>%
-  filter(year>1986&site_id_num %in% c(465, 586, 589, 739))%>%
+avg_snwater_eq<-se_site_yr%>%
+  filter(year>1986)%>%
   group_by(year)%>%
   summarize(avg_snow_water_e = mean(max_se))
   
   
 ```
+
+## Attempting Prediction of Snowpack
+```{r}
+avg_sn<-se_site%>%
+  group_by(Date)%>%
+  summarize(avg_sn_eq =  mean(snow_water_eq, rm.na = T))
+
+avg_sn%>%
+  ggplot(aes(Date, avg_sn_eq))+
+  geom_line()
+
+avg_sn%>%
+  as_tsibble(
+    index = "Date",
+    interval = "D"
+  )
+
+avg_sn_ts<-avg_sn%>%
+  as_tsibble(index = Date)
+
+fit<-avg_sn_ts%>%
+  model(
+    arima = ARIMA(avg_sn_eq~fourier("year", K = 20))
+  )
+fit%>%
+  forecast(h = "6 months")%>%
+  autoplot(avg_sn_ts%>%filter(year(Date)>2018))
+
+pred_sn_pk<-fit%>%
+  forecast(h = "6 months")%>%
+  filter(avg_sn_eq == max(avg_sn_eq))%>%
+  mutate(ci_90 = hilo(.distribution, 90))%>%
+  mutate(lower = ci_90$.lower, upper = ci_90$.upper)%>%
+  as_tibble()%>%
+  select(Date, avg_sn_eq, lower, upper)%>%
+  pivot_longer(-Date, names_to = "estimated_eq", values_to = "avg_snow_water_e")%>%
+  mutate(year = year(Date))%>%
+  select(-Date)
+
+```
+
 
 ## BOR Data
 ```{r}
@@ -106,113 +150,7 @@ bor_data%>%
   theme_light()
 ```
 
-
-Building forcasting model
-```{r}
-train<-bor_data%>%
-  filter(year(ds)!=1985, year(ds)<2018)
-  
-test<-bor_data%>%
-  filter(year(ds)>=2018)
-
-prophet_model_test<-prophet(
-  train,
-  growth = "linear",
-  yearly.seasonality = TRUE
-)
-
-forcast_test<-predict(prophet_model_test, test)
-
-forcast_test %>%
-  mutate(resid = trend - yhat) %>%
-  ggplot(aes(x = ds, y = resid)) +
-    geom_hline(yintercept = 0, color = "red") +
-    geom_point(alpha = 0.5, color = "black") +
-    geom_smooth() +
-    theme_light()
-
-```
-
-```{r}
-library(fable)
-
-bor_ts<-bor_data%>%
-  filter(year(ds)>1987 & year(ds)<2019)%>%
-  drop_na(y)%>%
-  as_tsibble()
-  
-
-bor_ts%>%
-  filter(is.na(y))
-
-fit<-bor_ts%>%
-  fill_gaps(.full = TRUE)%>%
-  model(
-    snaive = SNAIVE(y ~ lag("year")),
-    nnetar = NNETAR(y, n_networks = 20)
-  )
-
-fc <- fit %>%
-  forecast(h = "3 years")
-fc
-
-fc%>%
-  autoplot(bor_ts, level = NULL)
-```
-
-
-figuring out timeseries
-```{r}
-tbl1 <- tibble(
-  date = as.Date("2017-01-01") + 0:9,
-  value = rnorm(10)
-)
-
-as_tsibble(tbl1, index = date)
-```
-
-ETS Forecasting
-
-```{r}
-bor_data<-grabBOR.data(site_id = "MPHC2000", 
-                       timescale = 'daily', 
-                       DayBgn = '1985-01-01',
-                        DayEnd = Sys.Date())%>%
-  as_tibble()%>%
-  mutate(date = as.Date(Date),
-         res_volume = as.numeric(`Reservoir Storage Volume (ac_ft) Start of Day Values`))%>%
-  select(date, res_volume)
-
-bor_data%>%
-  mutate(res_volume = ifelse(is.na(res_volume), lag(res_volume), res_volume))%>%
-  filter(is.na(res_volume)) 
-
-bor_data%>%
-  rename(date = 1, vol = 2)%>%
-  filter(year)
-
-
-
-bor_data_ts<-bor_data%>%
-  mutate(res_volume = ifelse(is.na(res_volume), lag(res_volume), res_volume))%>%
-  filter(year(date)>1987)%>%
-  as_tsibble(index = date)
-
-
-# fit<-bor_data_ts%>%
-#   model(
-#         arima = ARIMA(res_volume~)
-#   )
-
-report(fit)
-
-fc<-fit%>%
-  forecast(h = "3 years")
-
-fc%>%
-  autoplot(bor_data_ts, level = 80, alpha = 0.5)
-```
-
+# Downloading Flow data from USGS
 ```{r}
 flow_data<-read_tsv("https://waterservices.usgs.gov/nwis/dv/?format=rdb&sites=09169500,%2009166500&startDT=1985-02-01&endDT=2020-02-07&statCd=00003&siteType=ST&siteStatus=all", skip = 35)%>%
   select(2:5)%>%
@@ -241,7 +179,7 @@ predicted_variable<-bedrock_flow%>%
   rename(year = 1, raftable_releases = 2)
 ```
 
-new BOR data
+## Get McPhee Data from NRCS API
 ```{r}
 bor_data<-grabBOR.data(site_id = "MPHC2000", 
                        timescale = 'daily', 
@@ -265,6 +203,8 @@ res_vol<-bor_data%>%
   filter(year>1986)
 ```
 
+
+## Create Variable to predict for regression
 ```{r}
 var_df<-predicted_variable%>%
   full_join(avg_snwater_eq)%>%
@@ -282,54 +222,83 @@ var_df%>%
   geom_point()
 ```
 
+## Random Forest Model
+This didn't really work! Not enough data. 
 ```{r}
 library(caret)
 set.seed(1234)
 
-control <- trainControl(method="repeatedcv", number=10, repeats=3, search = "random")
+control <- trainControl(method="cv", number=10, search = "random")
 
 rf_default <- train(raftable_releases~avg_snow_water_e+avg_vol, 
                     data=var_df_train, 
                     method="rf", 
                     tuneLength=3,
-                    ntree = 1000,
+                    ntree = 2000,
                     trControl=control)
 
+rf_default
 var_df_train%>%
   mutate(prediction = stats::predict(rf_default, .))%>%
   ggplot(aes(raftable_releases, prediction))+
   geom_point()+
   geom_text(aes(label=year),hjust=0, vjust=0)
 
-var_df%>%
+pred_sn_pk_1<-pred_sn_pk%>%
+  mutate(avg_vol = var_df%>%
+           filter(year == 2020)%>%
+           pull(avg_vol))
+
+test_data<-var_df%>%
   filter(year==2020)%>%
-  mutate(prediction = predict(rf_default, .))
+  select(-raftable_releases)%>%
+  mutate(estimated_eq = "current")%>%
+  bind_rows(pred_sn_pk_1)
+
+test_data%>%
+  mutate(prediction = stats::predict(rf_default, .))
 
 stats::predict(rf_default, var_df)
 
 ?predict()
 ```
 
-xgboos
+
+## Linear Poisson Model
+This worked better. 
 ```{r}
-ctrl <- trainControl(method = "cv", 
-                     number = 5)
+model_lm<-glm(raftable_releases~avg_snow_water_e+avg_vol, family = "poisson", data = var_df_train)
 
-xgbGrid <- expand.grid(nrounds = c(100,200),  # this is n_estimators in the python code above
-                       max_depth = 2,
-                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
-                       ## The values below are default values in the sklearn-api. 
-                       mtry =3,
-                       eta = 0.1,
-                       gamma=0,
-                       min_child_weight = 1,
-                       subsample = 1
-                      )
+var_df_train%>%
+  mutate(prediction = stats::predict(model_lm, .))%>%
+  ggplot(aes(raftable_releases, prediction))+
+  geom_point()+
+  geom_text(aes(label=year),hjust=0, vjust=0)
 
-xgb_model <- train(raftable_releases~avg_snow_water_e+avg_vol,
-                  data=var_df,
-                  tuneGrid = xgbGrid,
-                  trControl = ctrl)
+model_lm%>%
+  augment(data = var_df_train, type.predict = "response")%>%
+  ggplot(aes(raftable_releases, .fitted))+
+  geom_point()+
+  geom_text(aes(label=year),hjust=0, vjust=0)
+
+model_lm%>%
+  augment(newdata = test_data, type.predict = "response")
+```
+
+
+## strait up linear model
+This worked also, but in theory should not work as well because the predicted value is technically count data. 
+```{r}
+lm<-lm(raftable_releases~avg_snow_water_e+avg_vol, data = var_df_train)
+
+lm%>%
+  augment(data = var_df_train, type.predict = "response")%>%
+  ggplot(aes(raftable_releases, .fitted))+
+  geom_point()+
+  geom_text(aes(label=year),hjust=0, vjust=0)
+
+lm%>%
+  augment(newdata = test_data)
 ```
 
 
