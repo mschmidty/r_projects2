@@ -195,7 +195,7 @@ bor_data%>%
   filter(is.na(res_volume)) 
 
 res_vol<-bor_data%>%
-  filter(month(date) %in% c(12, 01, 02))%>%
+  filter(month(date) %in% c(01, 02))%>%
   group_by(year(date))%>%
   summarize(avg_vol = min(res_volume, na.rm = T))%>%
   ungroup()%>%
@@ -260,7 +260,6 @@ test_data%>%
 
 stats::predict(rf_default, var_df)
 
-?predict()
 ```
 
 
