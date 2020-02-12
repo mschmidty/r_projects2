@@ -1,0 +1,41 @@
+---
+title: "Landsat Scene Subset"
+author: "Mike Schmidt"
+date: "1/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Libs and data
+Path is first in the file name example `LC08_L1TP_036033_20170318_20170328_01_T1`. this scene has a path of 036 and a row of 033. 
+
+```{r}
+library(raster)
+library(tidyverse)
+library(lubridate)
+
+scene_list<-read_csv("https://landsat-pds.s3.amazonaws.com/c1/L8/scene_list.gz")
+View(scene_list)
+scene_list_clean<-scene_list %>%
+  filter(path==035 & row==034)%>%
+  filter(month(acquisitionDate)>=1 & month(acquisitionDate)<=3)%>%
+  mutate(ID = paste0(path, row))%>%
+  group_by(ID)%>%
+  slice(which.min(cloudCover))
+
+tile3534<-scene_list %>%
+  filter(path==035 & row==034)%>%
+  filter(month(acquisitionDate)>=0 & month(acquisitionDate)<=3 | month(acquisitionDate)==12)
+  ##filter(cloudCover<1)
+```
+
+Subset the urls. 
+```{r}
+tile3534%>%
+  select(download_url)
+```
+
+

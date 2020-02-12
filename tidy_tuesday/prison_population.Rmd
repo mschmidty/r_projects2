@@ -1,0 +1,44 @@
+---
+title: "prison_population_tt"
+author: "Mike Schmidt"
+date: "9/28/2019"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+data<-read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-01-22/prison_population.csv")
+
+data%>%
+  group_by(region, year)%>%
+  summarize(prison_population = sum(prison_population, na.rm = T), population = sum(population, na.rm = T))%>%
+  ungroup()%>%
+  mutate(prison_population = ifelse(prison_population == 0, NA, prison_population),
+         prison_percent = prison_population/population)%>%
+  ggplot(aes(year, prison_percent, color = region))+
+  geom_line()
+  
+
+
+data%>%
+  group_by(state, year)%>%
+  summarize(prison_population = sum(prison_population, na.rm = T), population = sum(population, na.rm = T))%>%
+  ungroup()%>%
+  mutate(prison_population = ifelse(prison_population == 0, NA, prison_population),
+         prison_percent = prison_population/population)%>%
+  ggplot(aes(year, prison_percent, color = state))+
+  geom_line()
+
+data%>%
+  group_by(state)%>%
+  summarize(prison_population = mean(prison_population, na.rm = T),
+            population = mean(population, na.rm = T))%>%
+  ungroup()%>%
+  mutate(prison_population = ifelse(prison_population == 0, NA, prison_population),
+         prison_percent = prison_population/population)%>%
+  arrange(desc(prison_percent))
+
+?arrange()
+```
+

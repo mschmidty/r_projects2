@@ -1,0 +1,34 @@
+---
+title: "Untitled"
+author: "Mike Schmidt"
+date: "1/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(leaflet)
+library(raster)
+library(RColorBrewer)
+```
+
+```{r}
+safe_ski<-raster("/Volumes/My\ Book/GIS/avalanche/ski_safe_terrain.tif")
+plot(safe_ski)
+```
+
+
+```{r}
+pal = colorBin("YlOrRd", domain = NULL, bins = 4, na.color = "transparent")
+```
+
+```{r}
+leaflet()%>% addTiles() %>%
+  addRasterImage(safe_ski, color=pal, opacity=0.8)%>%
+  addLegend(pal=pal, values=values(safe_ski), title="Ski Terrain Not Likely to Slide")
+```
+

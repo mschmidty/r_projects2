@@ -1,0 +1,285 @@
+---
+title: "The Best Cows"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+My sister called me the other day.  She needed some help with formulas in excel. My sister is a cattle rancher in Montana.  She manages a herd of a little over 100 cows pairs.  She wanted to know which cows and sires (another word for bull cows) produce the heaviest young after one year. The heaviest young are important becuase many of her calfs are sold at auction after their first summer. The heavier they are the more money she can make.  
+
+## Cleaning the dataset
+
+My sister had done a really great job keeping track of life history information for her cows. But, a lot of her data was in different spreadsheets that used different column names. 
+
+### Load the our libraries
+
+We'll need the `tidyverse` packages for cleaning up the data and the `readxl` library to read the Excel file that I've combined the cow and calf information into. All of the data was in different spreadhseets that had a lot of formatting so the first step was to copy and paste all of the information into a single `.xlsx`.
+
+
+For this step you can download the data [here](https://github.com/mschmidty/bio_notes/blob/master/r/assets/cows/calf_info.xlsx).
+
+```{r warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+
+d_2019_1<-read_xlsx("calf_info.xlsx", sheet = "2019_Calf_info")%>%
+  select(-percent)%>%
+  rename(tag_num = 1, cow_weight = 2, calf_wean_weight = 3)
+  
+d_2019_2<-read_xlsx("calf_info.xlsx", sheet = "2019_Calf_info_2")%>%
+  select(`Tag #`, DOB, Sex, BW, Dam, Sire...8)%>%
+  rename(tag_num = 1, dob = 2, sex = 3, calf_birth_weight =4, dam = 5, sire = 6) 
+  
+d_2019<-d_2019_1%>%
+  left_join(d_2019_2)%>%
+  mutate(year = 2019, 
+         dob = as.Date(dob),
+         wean_date = as.Date("2019-10-10"))%>%
+  select(tag_num, sex, dob, calf_birth_weight, calf_wean_weight, wean_date, cow_weight, year, dam, sire)
+
+d_2018_1<-read_xlsx("calf_info.xlsx", sheet = "2018_Calf_info")%>%
+  select(`Tag#`, Birthdate, Sex, Birth, dam, sire)%>%
+  rename(tag_num = 1, dob = 2, sex = 3, calf_birth_weight = 4)
+
+d_2018_2<-read_xlsx("calf_info.xlsx", sheet = "2018_Calf_info2")%>%
+  rename(tag_num = 1, calf_wean_weight = 3, cow_weight = 4)%>%
+  select(-2, -5)
+  
+d_2018<-d_2018_1%>%
+  left_join(d_2018_2)%>%
+  mutate(year = 2018, 
+         dob = as.Date(paste0("2018-", month(dob), "-", day(dob))), 
+         wean_date = as.Date("2018-10-23"))%>%
+  select(tag_num, sex, dob, calf_birth_weight, calf_wean_weight, wean_date, cow_weight, year, dam, sire)
+
+
+d_2017_1<-read_xlsx("calf_info.xlsx", sheet = "2017_Calf_info")%>%
+  rename(tag_num = 1, dob = 2, sex = 3, calf_birth_weight = 4, calf_wean_weight = 5)%>%
+  mutate(dob = as.Date(dob))
+
+d_2017_2<-read_xlsx("calf_info.xlsx", sheet = "2017_Calf_info2")%>%
+  rename(tag_num = 1, cow_weight = `Cow weight`)%>%
+  select(tag_num, cow_weight)%>%
+  mutate(cow_weight = ifelse(cow_weight %in% c("?", "didn’t get lbs"), NA, cow_weight),
+         cow_weight = as.numeric(cow_weight))%>%
+  filter(!is.na(tag_num))
+
+d_2017<-d_2017_1%>%
+  left_join(d_2017_2)%>%
+  mutate(year = 2017, 
+         wean_date = as.Date("2017-10-20"))%>%
+  select(tag_num, sex, dob, calf_birth_weight, calf_wean_weight, wean_date, cow_weight, year, dam, sire)
+```
+
+My original thought was to write a function that would using `lapply` and `excel_sheets`.  But the each sheet needed custom cleaning so I ended up cleaning the sheets one by one.  
+
+Each years data is stored in two sheets.  I read each years sheets one by one and did some combination of the following steps:
+
+* Read in the data
+* renamed column headers with `dplyr::renam`
+* selected only the useful columns with `dplyr::select`
+* joined the two datasheets from each year together with `dplyr::left_join`
+* used `dplyr::mutate` to add a year and wean data (my sister gave me the wean dates in an email)
+
+Now to add them all together and calculate a few helpful ratios and metrics.  Some of these were just for my sister and won't get used. 
+
+```{r}
+data<-bind_rows(d_2019, d_2018, d_2017)%>%
+  mutate(wean_age = as.numeric(wean_date-dob),
+         calf_weight_gained = calf_wean_weight - calf_birth_weight,
+         calf_weight_gained_per_day = calf_weight_gained/wean_age,
+         weight_gained_as_perc_of_cow = calf_weight_gained/cow_weight,
+         weight_gained_as_perc_of_cow_per_day = calf_weight_gained/cow_weight/wean_age)%>%
+  mutate(id = paste0(tag_num, "_", year))%>%
+  filter(id !="5715_2017")
+
+rm(d_2017, d_2017_1, d_2017_2, d_2018, d_2018_1, d_2018_2, d_2019, d_2019_1, d_2019_2)
+
+head(data)
+```
+
+And boom we have all of the data in one file.  There was a problem with one of the cows in the spreadsheet so I had to remove it in the last step (cow 5715 from 2017). 
+
+Let's look at the dataset: 
+
+| **Variable**                             | **Description**                                                                     |
+|------------------------------------------|-------------------------------------------------------------------------------------|
+| **tag_num**                              | Calf Tag Number                                                                     |
+| **sex**                                  | Calf sex                                                                            |
+| **dob**                                  | Calf date of birth                                                                  |
+| **calf_birth_weight**                    | Is the first weight of the calf                                                     |
+| **calf_wean_weight**                     | The weight of the calf when they are weaned                                         |
+| **wean_date**                            | Date the calf was weaned                                                            |
+| **cow_weight**                           | Weight of the cow at weaning (I'm not totally  sure when this measurement is taken) |
+| **year**                                 | The year of the data                                                                |
+| **dam**                                  | The tag number of the dam (or mother cow)                                           |
+| **sire**                                 | The tag number of the sire (or father cow)                                          |
+| **wean_age**                             | wean_date - dob (in days)                                                           |
+| **calf_weight_gained**                   | calf_wean_weight - calf_birth_weight (ibs)                                          |
+| **calf_weight_gained_per_day**           | calf_weight_gained/wean_age (ibs)                                                   |
+| **weight_gained_as_perc_of_cow**         | calf_weight_gained/cow_weight (ibs)                                                 |
+| **weight_gained_as_perc_of_cow_per_day** | calf_weight_gained/cow_weight/wean_age                                              |
+| **id**                                   | Observation unique id (tag_num combined with year)                                  |
+
+## Looking at the data
+
+```{r}
+library(extrafont)
+```
+
+```{r include = FALSE}
+loadfonts()
+```
+
+```{r warning = FALSE}
+##font_import() -- You'll have to run this before you can use all of the fonts on your machine. 
+theme_set(theme_light()+
+            theme(
+              plot.margin = margin(20,20,20,20, unit = "pt"),
+              text = element_text(family = "Noto Sans"),
+              plot.title = element_text(face = "bold"),
+              axis.title = element_text(color = "#909497"),
+              axis.title.x = element_text(margin = margin(10,0,0,0, unit = "pt")),
+              axis.title.y = element_text(margin = margin(0,10,0,0, unit = "pt")),
+              legend.title = element_text(face = "bold")
+            ))
+
+data%>%
+  count(sire, sort = T)%>%
+  mutate(sire = fct_reorder(sire, n))%>%
+  ggplot(aes(sire, n))+
+  geom_col()+
+  coord_flip()+
+  labs(title = "Number of young per sire", 
+       x = "Sire tag number", 
+       y = "Number of Young")
+```
+Sires have up to 26 young.  Many have had less than 3, however. There are also a lot of NAs.  
+
+Next lets look at dams. 
+
+```{r}
+data%>%
+  count(dam, sort = T)%>%
+  head()
+
+data%>%
+  count(dam, sort = T)%>%
+  count(n)%>%
+  mutate(n = ifelse(n==36, NA, n))
+```
+
+This one I am not going to plot because there are too many.  Here we have almost 180 dams.  Dams have a max of three calfs, which makes sense given that the dataset is from 2017 to 2019.  
+
+Let's also look at calf weight gained per day by cow weight.
+```{r warning = FALSE}
+data%>%
+  ggplot(aes(calf_weight_gained_per_day))+
+  geom_histogram(binwidth = 0.1)
+
+data%>%
+  ggplot(aes(cow_weight))+
+  geom_histogram(binwidth = 40)
+
+data%>%
+  ggplot(aes(cow_weight, calf_weight_gained_per_day))+
+  geom_point(color = "#3498DB", size = 4, alpha = 0.4)+
+  labs(title = "Cow Weight vs Calf Weight",
+       y = "Calf Weight Gained per Day",
+       x = "Cow Weight")
+```
+It looks like both cow weight and calf weight are fairly normal and that cow weight and calf weight gained per day are fairly well correlated. 
+
+
+
+Now let's look at the weight gained per day of calfs produced by each sire that has had more than 7 young.
+
+```{r warning = FALSE}
+data%>%
+  mutate(sire = fct_reorder(sire, calf_weight_gained_per_day, .fun = median, na.rm = T))%>%
+  group_by(sire)%>%
+  mutate(sire_count = n())%>%
+  filter(n()>7)%>%
+  ungroup()%>%
+  filter(!is.na(sire))%>%
+  ggplot(aes(sire, calf_weight_gained_per_day, fill = sire_count))+
+  geom_boxplot()+
+  coord_flip()+
+  scale_fill_distiller(palette = "GnBu", direction = 1)+
+  labs(title = "Calf Weight Gained per day by Sire",
+       subtitle = "Sires with more than 7 young.",
+       x = "Sire Tag #", 
+       y = "Weight (ibs) gained per day", 
+       fill = "# of Young")
+```
+
+I also wanted to look at how much cows gained per year to see if my sister was doing a good job of adding fat to her cows. 
+
+```{r warning = FALSE}
+data%>%
+  ggplot(aes(as.factor(year), calf_weight_gained, group = year))+
+  geom_boxplot()+
+  labs(title = "Calf Weight Gained Total by Year",
+       x = " ",
+       y = " Calf Weight Gained per day")
+```
+
+It looks like between 2018 cows were gaining more weight per day than either 2017 or 2017. 
+
+### Linear Model
+My sister wants to know which dams and sires produce calfs that weigh the most.  The dams have only had 3 calfs since she took over the ranch.  That's not really enough. But the Sires have had up to 26 young. So it seems that we could predict with a linear regression, calf weight gained per day using year, sex, wean age, birth weight, cow weight and sire.  I'm going to limit the sires to only those that have had more than 10 young.  
+
+```{r}
+
+lm_data<-data%>%
+  group_by(sire)%>%
+  mutate(count = n())%>%
+  ungroup()%>%
+  mutate(sire = ifelse(count<10, "other", sire))%>%
+  mutate(sire = replace_na(sire, "other"))%>%
+  group_by(dam)%>%
+  mutate(count = n())%>%
+  ungroup()%>%
+  mutate(dam = ifelse(count<3 | is.na(dam), "other", dam))%>%
+  ungroup()
+
+sm<-lm(calf_wean_weight ~ sire+wean_age+as.factor(year)+calf_birth_weight, data = lm_data)
+
+summary(sm)
+```
+
+```{r warning = FALSE}
+library(broom)
+
+tidy(sm, conf.int = T, conf.level = .80)%>%
+  filter(term != "(Intercept)")%>%
+  mutate(term = fct_reorder(term, estimate))%>%
+  ggplot(aes(term, estimate))+
+  geom_point()+
+  coord_flip()+
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high))+
+  labs(title = "Best sires", 
+       subtitle = "Controlling for year, wean age and mother weight",
+       y = "Estimate of relative pounds gained until weaning",
+       x = "")
+```
+
+Controlling for wean_age, year and calf birth weight you can see wich cows produce the heaviest young. Most of the sires are not statistically significant however.  I would say that these results provide some evidence that at least some cows produce larger cows than others. 
+
+
+
+
+
+
+
+
+
+
+
+
+

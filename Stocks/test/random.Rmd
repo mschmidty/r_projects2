@@ -1,0 +1,20 @@
+---
+title: "Test_outside_functions"
+author: "Mike Schmidt"
+date: "6/30/2019"
+output: html_documenta
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+source("R/predict_functions.R")
+
+end_date<-as.Date(today())
+start_date<-as.Date("1970-01-01")
+
+ind<-calc_indicators("WM", start_date, end_date)
+```
+

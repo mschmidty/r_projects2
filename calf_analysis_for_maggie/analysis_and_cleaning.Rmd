@@ -1,0 +1,297 @@
+---
+title: "Maggie Help"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+library(tidyverse)
+library(googledrive)
+library(readxl)
+library(lubridate)
+library(knitr)
+
+library(extrafont)
+##font_import()
+loadfonts()
+
+
+theme_set(theme_light()+
+            theme(
+              text = element_text(family = "Sarabun"),
+              panel.background = element_rect(fill = "#F0F3F4"),
+              plot.background = element_rect(fill = "#F0F3F4")
+            ))
+```
+
+```{r, include = FALSE}
+# drive_auth()
+# drive_download(as_id("1umb25rH-_vKQaqDcwq0zLNgD7iMGTf405AS5tSWqnuQ"), "calf_info.xlsx", overwrite = T)
+```
+
+```{r include = FALSE}
+d_2019_1<-read_xlsx("calf_info.xlsx", sheet = "2019_Calf_info")%>%
+  select(-percent)%>%
+  rename(tag_num = 1, cow_weight = 2, calf_wean_weight = 3)
+  
+d_2019_2<-read_xlsx("calf_info.xlsx", sheet = "2019_Calf_info_2")%>%
+  select(`Tag #`, DOB, Sex, BW, Dam, Sire...8)%>%
+  rename(tag_num = 1, dob = 2, sex = 3, calf_birth_weight =4, dam = 5, sire = 6) 
+  
+d_2019<-d_2019_1%>%
+  left_join(d_2019_2)%>%
+  mutate(year = 2019, 
+         dob = as.Date(dob),
+         wean_date = as.Date("2019-10-10"))%>%
+  select(tag_num, sex, dob, calf_birth_weight, calf_wean_weight, wean_date, cow_weight, year, dam, sire)
+
+d_2018_1<-read_xlsx("calf_info.xlsx", sheet = "2018_Calf_info")%>%
+  select(`Tag#`, Birthdate, Sex, Birth, dam, sire)%>%
+  rename(tag_num = 1, dob = 2, sex = 3, calf_birth_weight = 4)
+
+d_2018_2<-read_xlsx("calf_info.xlsx", sheet = "2018_Calf_info2")%>%
+  rename(tag_num = 1, calf_wean_weight = 3, cow_weight = 4)%>%
+  select(-2, -5)
+  
+d_2018<-d_2018_1%>%
+  left_join(d_2018_2)%>%
+  mutate(year = 2018, 
+         dob = as.Date(paste0("2018-", month(dob), "-", day(dob))), 
+         wean_date = as.Date("2018-10-23"))%>%
+  select(tag_num, sex, dob, calf_birth_weight, calf_wean_weight, wean_date, cow_weight, year, dam, sire)
+
+
+d_2017_1<-read_xlsx("calf_info.xlsx", sheet = "2017_Calf_info")%>%
+  rename(tag_num = 1, dob = 2, sex = 3, calf_birth_weight = 4, calf_wean_weight = 5)%>%
+  mutate(dob = as.Date(dob))
+
+d_2017_2<-read_xlsx("calf_info.xlsx", sheet = "2017_Calf_info2")%>%
+  rename(tag_num = 1, cow_weight = `Cow weight`)%>%
+  select(tag_num, cow_weight)%>%
+  mutate(cow_weight = ifelse(cow_weight %in% c("?", "didn’t get lbs"), NA, cow_weight),
+         cow_weight = as.numeric(cow_weight))%>%
+  filter(!is.na(tag_num))
+
+d_2017<-d_2017_1%>%
+  left_join(d_2017_2)%>%
+  mutate(year = 2017, 
+         wean_date = as.Date("2017-10-20"))%>%
+  select(tag_num, sex, dob, calf_birth_weight, calf_wean_weight, wean_date, cow_weight, year, dam, sire)
+
+```
+
+
+```{r include = FALSE, results = 'asis', warning=FALSE}
+data<-bind_rows(d_2019, d_2018, d_2017)%>%
+  mutate(wean_age = as.numeric(wean_date-dob),
+         calf_weight_gained = calf_wean_weight - calf_birth_weight,
+         calf_weight_gained_per_day = calf_weight_gained/wean_age,
+         weight_gained_as_perc_of_cow = calf_weight_gained/cow_weight,
+         weight_gained_as_perc_of_cow_per_day = calf_weight_gained/cow_weight/wean_age)%>%
+  mutate(id = paste0(tag_num, "_", year))%>%
+  filter(id !="5715_2017")
+
+
+
+kable(head(data))
+```
+
+## Which Sires have calfs that gain the most weight?
+
+Sires rated based on how much their calfs gain per day: 
+
+
+```{r echo = FALSE, warning=FALSE}
+data%>%
+  mutate(sire = fct_reorder(sire, calf_weight_gained_per_day, .fun = median, na.rm = T))%>%
+  group_by(sire)%>%
+  filter(n()>7)%>%
+  ungroup()%>%
+  ggplot(aes(sire, calf_weight_gained_per_day))+
+  geom_boxplot()+
+  coord_flip()+
+  labs(title = "Calf Weight Gained per day by Sire",
+       subtitle = "Sires with more than 7 young.",
+       x = "Sire AAA#", 
+       y = "Weight (ibs) gained per day")
+```
+
+Just a note: these are box plots.  The line the is vertical is the median the box represents the two quartiles (25% of the weights on both sides of the median), and the horizontal lines represent the remaining quartiles.  The extra dots are outliers (way outside of the range). 
+
+```{r include = FALSE}
+data%>%
+  group_by(sire)%>%
+  filter(n()>4)%>%
+  summarize(n = n(), 
+            avg_calf_weight_gained = mean(calf_weight_gained, na.rm = T),
+            avg_calf_weight_gained_per_day = mean(calf_weight_gained_per_day, na.rm = T))%>%
+  arrange(desc(avg_calf_weight_gained))
+```
+
+
+Dams ranked by how much their calfs gain per day.  *I wouldn't put too much into this because there are very few data points per Dam*
+
+```{r echo = FALSE, fig.height = 10, warning=FALSE}
+data%>%
+  group_by(dam)%>%
+  filter(n()>2)%>%
+  ungroup()%>%
+  mutate(dam = fct_reorder(dam, calf_weight_gained_per_day, .fun = median, na.rm = T))%>%
+  ggplot(aes(dam, calf_weight_gained_per_day))+
+  geom_boxplot()+
+  coord_flip()+
+  labs(title = "Calf Weight Gained per Day by Dam",
+       subtitle = "All dams with more than two young.",
+       x = "Dam (AAA#)", 
+       y = "Calf Weight Gained per Day (ibs)")
+```
+
+
+```{r include = FALSE, warning=FALSE}
+data%>%
+  ggplot(aes(calf_birth_weight))+
+  geom_histogram(binwidth = 4)+
+  labs(title ="Calf Weights: 2017 to 2019")
+
+data%>%
+  ggplot(aes(calf_weight_gained))+
+  geom_histogram(binwidth = 20)+
+  labs(title = "Calf Weight Gained: 2017 to 2019")
+
+data%>%
+  ggplot(aes(calf_weight_gained_per_day))+
+  geom_histogram()+
+  labs(title = "Calf Weight Gained per Day: 2017 to 2019")
+
+data%>%
+  ggplot(aes(wean_age))+
+  geom_histogram()+
+  labs(title = "Calf Wean Age: 2017 to 2019")
+
+
+```
+
+```{r include = FALSE}
+data%>%
+  ggplot(aes(calf_birth_weight, cow_weight))+
+  geom_point()+
+  labs(title = "Calf Birth Weight vs. Cow Weight")
+
+data%>%
+  ggplot(aes(calf_weight_gained, cow_weight))+
+  geom_point()+
+  labs(title = "Calf Weight Gained vs. Cow Weight")
+
+data%>%
+  ggplot(aes(calf_weight_gained_per_day, cow_weight))+
+  geom_point()+
+  labs(title = "Calf Weight Gained per Day vs. Cow Weight")
+```
+
+This plot shows that calf weight gained per day is correlated (connected) with cow weight, which makes sense. 
+
+```{r echo = FALSE, warning=FALSE}
+data%>%
+  filter(wean_age<275)%>%
+  ggplot(aes(calf_weight_gained_per_day, cow_weight))+
+  geom_point(alpha = 0.5, size = 4)+
+  scale_size(breaks = seq(150, 240, by = 10), range = c(1,10))+
+  labs(title = "Calf Weight Gained per day by cow weight, wean age and year", 
+       x = "Calf Weight Gained per Day (ibs)", 
+       y = "Dam Weight (ibs)")
+```
+
+## Calf Performance
+
+This shows how much your calfs gained gained per day by year. 
+
+```{r echo = FALSE, warning=FALSE}
+
+data%>%
+  ggplot(aes(as.factor(year), calf_weight_gained, group = year))+
+  geom_boxplot()+
+  labs(title = "Calf Weight Gained Total by Year",
+       x = " ",
+       y = " Calf Weight Gained per day")
+```
+
+```{r include = FALSE}
+library(broom)
+model<-lm(calf_wean_weight ~ cow_weight+wean_age+as.factor(year)+sex+calf_birth_weight, data = data)
+summary(model)
+
+tidy(model, conf.int = T)%>%
+  filter(term != "(Intercept)")%>%
+  mutate(term = fct_reorder(term, estimate))%>%
+  ggplot(aes(term, estimate))+
+  geom_point()+
+  coord_flip()+
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high))
+
+data%>%
+  broom::augment(model, .)%>%
+  ggplot(aes(calf_wean_weight, .fitted))+
+  geom_point()
+
+?broom::augment()
+
+model_weight_per_day<-lm(calf_weight_gained_per_day ~ cow_weight+wean_age+as.factor(year)+sex+calf_birth_weight, data = data)
+summary(model_weight_per_day)
+
+lm_data<-data%>%
+  group_by(sire)%>%
+  mutate(count = n())%>%
+  ungroup()%>%
+  mutate(sire = ifelse(count<10, "other", sire))%>%
+  mutate(sire = replace_na(sire, "other"))%>%
+  group_by(dam)%>%
+  mutate(count = n())%>%
+  ungroup()%>%
+  mutate(dam = ifelse(count<3 | is.na(dam), "other", dam))%>%
+  ungroup()
+
+model2<-lm(calf_weight_gained ~ cow_weight+sire+as.factor(year)+wean_age, data = lm_data)
+summary(model2)
+
+data%>%
+  augment(model2, .)%>%
+  ggplot(aes(calf_weight_gained_per_day, .fitted))+
+  geom_point()
+```
+
+
+## My best math brain trying to find your best sires
+
+I ran a linear regression on your data. 
+
+
+```{r echo = FALSE, warning=FALSE}
+tidy(model2, conf.int = T, conf.level = .80)%>%
+  filter(term != "(Intercept)")%>%
+  mutate(term = fct_reorder(term, estimate))%>%
+  ggplot(aes(term, estimate))+
+  geom_point()+
+  coord_flip()+
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high))+
+  labs(title = "Best sires", 
+       subtitle = "Controlling for year, wean age and mother weight",
+       y = "Estimate of relative pounds gained per day",
+       x = "")
+```
+
+Some thoughts:
+
+* 2019 was your best year for weight gain.  
+* 2018 might have had the best weight gained per day for calfs but that might be because of how many days you had them or the mothers weight. 
+* I would put more weight into this chart than the other chart measuring sire performance.  This chart controls for things like Cow Weight. So you know that regardless of weight these sires produce the calfs that gain the most weight.
+
+
+
+
+
+

@@ -1,0 +1,172 @@
+---
+title: "Backtest Regression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(quantmod)
+library(lubridate)
+library(TTR)
+library(caret)
+```
+
+
+## Make dates to backtest model
+
+Read in stock with correct dates. 
+```{r}
+stock <- "MSFT"
+
+start<-as.Date("1970-01-01")
+
+end<-as.Date(today())
+data<-getSymbols(stock, src="yahoo", auto.assign = FALSE, from=start, to=end)
+df<-data.frame(date=index(data), coredata(data))
+
+data_cl<-df%>%
+  rename(open=2, high=3, low=4, close=5, volume=6, adjusted=7)%>%
+  mutate(id = row_number())%>%
+  as_tibble()
+head(data_cl)
+
+data_cl%>%
+  select(date)%>%
+  rename(date_buy = date)%>%
+  mutate(trade_date=ifelse(row_number()%%30 == 0, "TRADE", NA))%>%
+  filter(trade_date == "TRADE")%>%
+  mutate(date_sell = c(tail(date_buy, -1), rep(NA, 1)))%>%
+  select(-trade_date)%>%
+  head(-1)%>%
+  write_csv("test/date_list/date_list_buy_sell_30.csv")
+```
+
+
+## Run random forest function
+
+Select Dates
+```{r}
+dates_to_trade<-read_csv("test/date_list/date_list_buy_sell_30.csv")%>%
+  tail(2)
+
+```
+
+
+How to backtest investment!
+
+1. Take dates to invest. 
+2. On those dates run prediction
+3. Buy 3 stocks.  
+  * Take total money divide by three and buy an even amount of each share. 
+4. Sell Stock at the end of the term.  
+5. Record the total amount. 
+6. Use current amount to rerun algorithm. 
+
+
+```{r}
+source("R/predict_functions.R")
+
+backtest_algo_regression<-function(buy, sell, list_of_stocks, start_date, is_regression, number_of_trees){
+  
+  predicted_list<-lapply(list_of_stocks, stock_price_rf, start_date, buy, is_regression, number_of_trees)
+  
+  tickers_to_buy<-bind_rows(predicted_list)%>%
+    group_by(ticker)%>%
+    do(tail(., n=1))%>%
+    ungroup()%>%
+    arrange(prediction)%>%
+    tail(4)
+
+
+  ##For Each Ticker, up to three, purchase a stock
+
+  print(tickers_to_buy)
+
+  tickers_to_buy<-tickers_to_buy%>%
+    select(ticker)%>%
+    pull()
+
+  future_end<-sell
+
+  purchased_stocks<-lapply(tickers_to_buy, get_stock, buy, future_end, FALSE)%>%
+    bind_rows()%>%
+    as_tibble()
+
+  fund_total<-read_csv("output/performance.csv")%>%
+    tail(1)%>%
+    select(sale_value)%>%
+    pull()
+
+  purchased_stocks%>%
+    group_by(symbol)%>%
+    mutate(shares_purchased = fund_total/length(tickers_to_buy)/open[1])%>%
+    mutate(value=shares_purchased*close)%T>%
+    write_csv("output/data_log.csv",append = TRUE)%>%
+    filter(date==max(date))%T>%
+    print()%>%
+    ungroup()%>%
+    summarize(sum=sum(value))%>%
+    mutate(stocks_purchased = paste(tickers_to_buy, sep="", collapse = ", "))%>%
+    rename(sale_value=sum)%>%
+    mutate(date_purchase = buy)%>%
+    mutate(date_sold = future_end)%>%
+    mutate(gain_loss = (sale_value-fund_total))%>%
+    mutate(gain_loss_perc = gain_loss/fund_total*100)%>%
+    write_csv("output/performance.csv", append = TRUE)
+}
+
+```
+
+
+##Run Model
+```{r}
+set.seed(420)
+begin_test_date<-as.Date("1990-01-01")
+stock_num_sample<-30
+n_trees = 50
+dates_to_trade<-read_csv("test/date_list/date_list_buy_sell_30.csv")%>%
+  tail(30)
+
+for(row in 1:nrow(dates_to_trade)){
+  stock_list<-read_csv("https://datahub.io/core/s-and-p-500-companies-financials/r/constituents-financials.csv")%>%
+    filter(`Market Cap`>10000000000)%>%
+    filter(Price>20)%>%
+    sample_n(stock_num_sample)%>%
+    select(Symbol)%>%
+    unlist(use.names=FALSE)
+  
+  buy<- dates_to_trade[row, "date_buy"]%>%
+    pull()
+  sell<-dates_to_trade[row, "date_sell"]%>%
+    pull()
+  
+  print(c(buy, sell))
+  
+  backtest_algo_regression(buy, sell, stock_list, begin_test_date, TRUE, n_trees)
+}
+```
+
+```{r}
+read_csv("output/performance.csv")%>%
+  head(1)%>%
+  write_csv("output/performance.csv")
+
+read_csv("output/performance.csv")
+```
+
+
+##Set Variables
+```{r}
+
+
+stock_list <- c("NKE","KR","GILD","CSCO", "AMAT", "NVDA", "WMT","CBS","CMCSA", "F","FB", "NFLX", "T", "TSLA", "TMUS", "TWTR", "ADBE", "MSFT", "SPWR", "GPRO", "SBUX", "F", "BABA", "BAC", "GE", "JD", "WM", "CVS", "WBA")
+stock_list <- c("NKE","KR","GILD","CSCO", "AMAT", "NVDA", "WMT","CBS","CMCSA", "F","FB", "NFLX", "T", "TSLA", "TMUS", "ADBE", "MSFT", "SPWR", "SBUX", "F", "BAC", "GE",  "WM")
+stock_list<- c("NKE","KR","GILD","CSCO", "AMAT", "NVDA", "WMT","CBS","CMCSA", "F","FB", "NFLX", "T", "TSLA")
+stock_list<- c("NKE","TXGRF", "KR")
+```
+

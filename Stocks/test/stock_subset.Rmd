@@ -1,0 +1,144 @@
+---
+title: "Create Stock List For Trading Algorithm"
+author: "Mike Schmidt"
+date: "10/24/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+options(scipen = 999)
+library(tidyverse)
+
+```
+
+```{r}
+nyse <- read_csv("https://www.nasdaq.com/screening/companies-by-industry.aspx?exchange=NYSE&render=download")
+nasdaq<- read_csv("https://www.nasdaq.com/screening/companies-by-industry.aspx?exchange=NASDAQ&render=download")
+amex<- read_csv("https://www.nasdaq.com/screening/companies-by-industry.aspx?exchange=AMEX&render=download")
+sandp<-read_csv("https://datahub.io/core/s-and-p-500-companies-financials/r/constituents-financials.csv")
+```
+## Rules to Subset the NYSE
+1. Comapanies with `MarketCap` > 5000000000
+2. Sectors
+  - No finanche
+
+## Potential NYSE subset
+
+```{r}
+nyse%>%
+  filter(MarketCap>10000000000)%>%
+  filter(Sector!="Finance" & Sector!="Miscellaneous" )%>%
+  count(Sector)
+```
+
+```{r}
+nyse%>%
+  count(IPOyear)%>%
+  View()
+
+nyse%>%
+  filter(MarketCap<25000000000)%>%
+  sample_n(40)
+  count
+  ggplot(aes(MarketCap))+
+    geom_density()
+```
+
+
+## S and P 500 subset
+```{r}
+read_csv("https://datahub.io/core/s-and-p-500-companies-financials/r/constituents-financials.csv")%>%
+  filter(`Market Cap`>10000000000)%>%
+  filter(Price>20)%>%
+  sample_n(60)%>%
+  select(Symbol)%>%
+  unlist(use.names=FALSE)
+
+?unlist
+  count(Sector, Sort=T)
+  ggplot(aes(Price))+
+    geom_density()
+  
+```
+
+
+
+```{r}
+nyse2; nasdaq2; amex;
+```
+
+```{r}
+nyse<-nyse%>%mutate(exchange="NYSE")
+nasdaq<-nasdaq%>%mutate(exchange="NASDAQ")
+amex<-amex%>%mutate(exchange="AMEX")
+nyse
+```
+
+```{r}
+all_exchange<-rbind(nyse,nasdaq, amex)%>%
+  mutate(last_sale=as.numeric(LastSale))%>%
+  select(Symbol:MarketCap, last_sale, 4:exchange, -X10, -LastSale)%>%
+  rename(symbol=Symbol, market_cap=MarketCap, industry=Industry)%>%
+  select(symbol, market_cap, industry, IPOyear)%>%
+  distinct()
+all_exchange
+```
+
+
+```{r}
+combined<-rbind(nyse2, nasdaq2)
+
+(combined_cl<-combined%>%
+  mutate(open=as.numeric(Open), high=as.numeric(High), low=as.numeric(Low), close=as.numeric(Close), "52_week_high"=as.numeric(`52 Wk High`), "52_week_low"=as.numeric(`52 Wk Low`), div=as.numeric(Div), yeild=as.numeric(Yield), pe=as.numeric(`P/E`), ytd_perc_change=as.numeric(`YTD % Chg`))%>%
+  rename(name=Name, symbol=Symbol)%>%
+  select(1:2, open:ytd_perc_change)%>%
+  left_join(all_exchange)%>%
+  mutate(volatility=(`52_week_high`-`52_week_low`)/close)%>%
+  mutate(ipo_year=as.numeric(IPOyear))%>%
+  select(-IPOyear)
+)
+  
+```
+No 
+
+```{r}
+`%notin%` <- function(x,y) !(x %in% y) 
+filter<-c("Major Banks", "Oil & Gas Production", "Investment Managers", "Life Insurance", "Finance: Consumer Services","n/a")
+combined_cl%>%
+  filter(market_cap>150000000 & close>5 & pe<15)%>%
+  filter(industry %notin% filter & volatility<1 & volatility> 0.5)%>%
+  filter(ipo_year<2010 | is.na(ipo_year))
+  # group_by(industry)%>%
+  # summarise(count=n())%>%
+  # arrange(desc(count))
+```
+```{r}
+combined_cl%>%
+  group_by(industry)%>%
+  summarise(count=n())%>%
+  arrange(desc(count))
+```
+
+```{r}
+ggplot(filter(combined_cl, pe<100), aes(x=pe))+
+  geom_histogram()
+```
+
+```{r}
+ggplot(filter(combined_cl, ytd_perc_change<500 & pe<1000), aes(x=ytd_perc_change, y=pe))+
+  geom_point(size=2, shape=1)+
+  geom_smooth()
+```
+
+```{r}
+ggplot(filter(combined_cl, ytd_perc_change<500), aes(x=market_cap, y=ytd_perc_change))+
+  geom_point(size=2, shape=1)+
+  geom_smooth()
+```
+
+
+

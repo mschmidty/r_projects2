@@ -1,0 +1,420 @@
+---
+title: "Random Forests on Combined"
+author: "Mike Schmidt"
+date: "7/19/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(quantmod)
+library(caret)
+library(TTR)
+library(RcppRoll)
+library(broom)
+```
+
+
+# The firs method I am testing is trying to build a model that predicts 40 stocks. 
+```{r}
+
+source("R/predict_functions.R")
+stock_list<-read_csv("https://datahub.io/core/s-and-p-500-companies-financials/r/constituents-financials.csv")%>%
+    filter(`Market Cap`>10000000000)%>%
+    filter(Price>20)%>%
+    sample_n(30)%>%
+    select(Symbol)%>%
+    unlist(use.names=FALSE)
+
+stocks<-lapply(stock_list, get_stock, TRUE)%>%
+  compact()
+
+compact(stocks)
+
+head_70<-function(x){
+ head(x, round(0.7*nrow(x)))
+}
+
+tail_30<-function(x){
+  tail(x, round(0.3*nrow(x)))
+}
+ 
+
+stocks_train<- lapply(stocks, head_70)%>%
+  bind_rows()%>%
+  select(obv:rsi, slowD, since52weekHigh:since52weekLow, test_variable)%>%
+  drop_na()
+
+stocks_test<-lapply(stocks, tail_30)%>%
+  bind_rows()%>%
+  select(obv:rsi, slowD, since52weekHigh:since52weekLow, test_variable)%>%
+  drop_na()
+
+
+?getSymbols()
+```
+
+
+```{r}
+set.seed(3456)
+trainIndex <- createDataPartition(stocks$period_window_perc, p = .30, 
+                                  list = FALSE, 
+                                  times = 1)
+
+train<-stocks[ trainIndex,]
+test<- stocks[ -trainIndex,]
+
+```
+
+
+Regression
+```{r}
+
+train_control <- trainControl(	method="cv",
+                                       number=5,
+                                       classProbs = TRUE,
+                                       savePredictions = TRUE, 
+                                       sampling = "down")
+rf<- train(
+          period_window_perc~ ., 
+          data = train, 
+          method="rf", 
+          trCrontrol = train_control,
+          ntree=100, 
+          na.action = na.pass, 
+          tuneGrid = expand.grid(.mtry = 9), 
+          importance = TRUE
+        )
+
+```
+
+
+10 percent in 30 days
+```{r}
+set.seed(420)
+rf<-train(
+          as.factor(test_variable)~ .,
+          data = stocks_train,
+          method="rf",
+          metric = "Accuracy",
+          tuneGrid = expand.grid(.mtry=9),
+          trControl = trainControl(method="repeatedcv", number=6, repeats=3, sampling="down"), 
+          ntree=100, 
+          importance = TRUE
+        )
+
+prediction_accuracy<-stocks_test%>%
+  mutate(prediction = as.numeric(predict(rf, stocks_test)))%>%
+  select(test_variable, prediction)%>%
+  mutate(correct = ifelse(test_variable == 1 & prediction == 2 | test_variable == 0 & prediction == 1 , 1, 0 ))
+
+nrow(filter(prediction_accuracy, correct==1))/nrow(prediction_accuracy)
+
+nrow(filter(prediction_accuracy, correct == 1 & test_variable == 1))/nrow(filter(prediction_accuracy, test_variable == 1))
+ 
+```
+
+```{r}
+prediction<-test%>%
+  mutate(prediction = predict(rf, test))
+
+prediction%>%
+  ggplot(aes(period_window_perc, prediction))+
+  geom_point(color = "#ff8000", alpha = 0.25, size = 4)+
+  theme_minimal()
+```
+
+
+
+```{r}
+test_stocks_tickers<-read_csv("https://datahub.io/core/s-and-p-500-companies-financials/r/constituents-financials.csv")%>%
+    filter(`Market Cap`>10000000000)%>%
+    filter(Price>20)%>%
+    sample_n(10)%>%
+    select(Symbol)%>%
+    unlist(use.names=FALSE)
+
+test_stocks_list<-lapply(test_stocks_tickers, get_stock, TRUE)%>%
+  bind_rows()%>%
+  select(obv:rsi, slowD, since52weekHigh:since52weekLow, period_window_perc)%>%
+  drop_na()
+
+test_stock_prediction<-test_stocks_list%>%
+  mutate(prediction = predict(rf, test_stocks_list))
+
+test_stock_prediction%>%
+  ggplot(aes(period_window_perc, prediction))+
+  geom_point(color = "#ff8000", alpha = 0.25, size = 4)+
+  theme_minimal()
+```
+
+
+## Final Thoughts, multi stock model is a failure.  No prediction.  
+
+
+
+#Single Stock Predictions
+
+```{r}
+stock_ticker<-read_csv("https://datahub.io/core/s-and-p-500-companies-financials/r/constituents-financials.csv")%>%
+    filter(`Market Cap`>10000000000)%>%
+    filter(Price>20)%>%
+    sample_n(1)%>%
+    select(Symbol)%>%
+    unlist(use.names=FALSE)
+
+s_stock<-get_stock("F")%>%
+  select(date, obv:ult_osc, difPerc52max:since52weekLow, period_window_perc)%>%
+  select(-min52occured)%>%
+  drop_na()
+
+train_s_stock<-head(s_stock, round(0.70*nrow(s_stock)))
+test_s_stock<-tail(s_stock, round(0.30*nrow(s_stock)))
+
+set.seed(3456)
+trainIndex <- createDataPartition(s_stock$period_window_perc, p = .30, 
+                                  list = FALSE, 
+                                  times = 1)
+
+train<-s_stock[ trainIndex,]
+test<- s_stock[ -trainIndex,]
+
+
+
+set.seed(420)
+rf<-train(
+          as.factor(period_window_perc)~ .,
+          data = train,
+          method="rf",
+          metric = "Accuracy",
+          tuneGrid = expand.grid(.mtry=10),
+          trControl = trainControl(method="repeatedcv", number=10, repeats=5, sampling="down"), 
+          ntree=200, 
+          importance = TRUE)
+rf
+varImp(rf)
+
+s_prediction_accuracy<-test_s_stock%>%
+  mutate(prediction = predict(rf, test_s_stock))%>%
+  select(test_variable, prediction)%>%
+  mutate(correct = ifelse(test_variable == 1 & prediction == 2 | test_variable == 0 & prediction == 1 , 1, 0 ))
+
+print(paste("Total Observations:", nrow(s_prediction_accuracy)))
+nrow(filter(s_prediction_accuracy, correct==1))/nrow(s_prediction_accuracy)
+
+print(paste("Number of times Stock Went Up over period:", nrow(filter(s_prediction_accuracy, test_variable == 1))))
+nrow(filter(s_prediction_accuracy, correct == 1 & test_variable == 1))/nrow(filter(s_prediction_accuracy, test_variable == 1))
+
+nrow(filter(s_prediction_accuracy, correct == 1 & test_variable == 0))/nrow(filter(s_prediction_accuracy, test_variable == 0))
+
+```
+
+## Regression Test
+```{r}
+s_stock<-get_stock("AAPL")%>%
+  select(obv:ult_osc, max52week:since52weekLow, period_window_perc)%>%
+  select(-roc, -fastD, -fastK, -slowD, -min52occured, -max52occured, -cmo )%>%
+  drop_na()
+
+trainIndex <- createDataPartition(s_stock$period_window_perc, p = .30, 
+                                  list = FALSE, 
+                                  times = 1)
+
+train<-s_stock[ trainIndex,]
+test<- s_stock[ -trainIndex,]
+
+train_control <- trainControl(	method="cv",
+                                       number=5,
+                                       classProbs = TRUE,
+                                       savePredictions = TRUE, 
+                                       sampling = "down")
+rf<- train(
+          period_window_perc~ ., 
+          data = train, 
+          method="rf", 
+          trCrontrol = train_control,
+          ntree=500, 
+          na.action = na.pass, 
+          tuneGrid = expand.grid(.mtry = 9), 
+          importance = TRUE
+        )
+rf
+varImp(rf)
+
+test%>%
+  mutate(prediction = as.numeric(predict(rf, test)))%>%
+  ggplot(aes(period_window_perc, prediction))+
+  geom_point()+
+  theme_minimal()
+
+cor_test_data<-test%>%
+  mutate(prediction = as.numeric(predict(rf, test)))%>%
+  select(period_window_perc, prediction)
+
+cor_track<-cor_track%>%
+  bind_rows(cor.test(cor_test_data$period_window_perc, cor_test_data$prediction)%>%
+  tidy())
+cor_track
+```
+
+
+## Variable Correlation test
+```{r}
+s_stock<-get_stock("GE")%>%
+  select(date, obv:ult_osc, difPerc52max:since52weekLow, period_window_perc)%>%
+  select(-min52occured, -date, -cmo, -fastD, -fastK, -slowD)%>%
+  drop_na()
+
+library(Hmisc)
+
+cor<-rcorr(as.matrix(s_stock))
+res<-cor(s_stock)
+tidy(cor)%>%
+  filter(abs(estimate) > .75)%>%
+  View()
+
+col<- colorRampPalette(c("blue", "white", "red"))(20)
+heatmap(x = res, col = col, symm = TRUE)
+```
+
+
+
+## This is a version of the get_stock function that I have altered for purposes in this document. 
+```{r}
+#' Calculates daily indicators for given stock
+#' 
+#' @param ticker a stock symbol.  Example: "TSLA". 
+#' @param st_date the start of daily indicator calculations "2019-01-20". 
+#' @param e_date the end of daily indicator calculations "1970-01-20". 
+get_stock<-function(ticker, calc_ind=TRUE){
+  
+  
+  
+  print(ticker)
+  
+  ticker_data<-tryCatch(
+    {
+      
+      ticker_data<-getSymbols(ticker, src="yahoo", auto.assign = FALSE)
+      data.frame(date=index(ticker_data), coredata(ticker_data))%>%
+        rename(open=2, high=3, low=4, close=5, volume=6, adjusted=7)%>%
+        mutate(id = row_number())%>%
+        mutate(symbol = ticker)
+      
+    },
+    error = function(cond){
+      print(paste(ticker, ":Was not able to download. Returned as Null"))
+      return(NULL)
+    }
+  )
+  
+  if(!is.null(ticker_data)){
+    if(calc_ind==TRUE){
+      rsi<-as.data.frame(RSI(ticker_data$close))%>%
+        mutate(id=ticker_data$id)%>%
+        rename(rsi=1)
+      
+      stoch<- as.data.frame(stoch(ticker_data[,c("high", "low", "close")]))%>%
+        mutate(id=ticker_data$id)
+      
+      wpr<-as.data.frame(WPR(ticker_data[,c("high", "low", "close")]))%>%
+        mutate(id=ticker_data$id)
+      
+      wpr<-rename(wpr, WPR = 1)
+      
+      obv<-as.data.frame(OBV(ticker_data$close, ticker_data$volume))%>%
+        mutate(id=ticker_data$id)%>%
+        rename(obv=1)
+      
+      macd<-as.data.frame(MACD(ticker_data$close))%>%
+        mutate(id=ticker_data$id)
+      
+      roc<-as.data.frame(ROC(ticker_data$close))%>%
+        mutate(id=ticker_data$id)%>%
+        rename(roc=1)
+      
+      cmo <- as.data.frame(CMO(ticker_data$close))%>%
+        mutate(id=ticker_data$id)%>%
+        rename(cmo=1)
+      
+      volatility<-as.data.frame(volatility(ticker_data$close))%>%
+        mutate(id=ticker_data$id)%>%
+        rename(volatility=1)
+      
+      ult.osc <- as.data.frame(ultimateOscillator(ticker_data[,c("high", "low", "close")]))%>%
+        mutate(id=ticker_data$id)%>%
+        rename(ult_osc = 1)
+      
+      data_joined<-ticker_data%>%
+        left_join(obv, by="id")%>%
+        left_join(roc, by="id")%>%
+        left_join(macd, by="id")%>%
+        left_join(rsi, by="id")%>%
+        left_join(stoch, by="id")%>%
+        left_join(cmo, by="id")%>%
+        left_join(volatility, by="id")%>%
+        left_join(ult.osc, by = "id")
+      
+      ind<-data_joined%>%
+        ##get yesterdays close
+        mutate(yesterday_close = head(c(NA, close), -1))%>%
+        ## calculate the gain for the day
+        mutate(gain_loss=close-yesterday_close)%>%
+        
+        ## calculate the percent gain/loss for the day
+        mutate(percent_gain_loss=gain_loss/yesterday_close*100)%>%
+        
+        ## 52 week calculations
+        ### - calculate the 52 week high
+        mutate(max52week=roll_max(high, n=252, align="right", fill=NA, na.rm=FALSE))%>%
+        ### - calculate a 1 for when the 52 week high is, all other times are 0 even NAs (very important to make NAs 0 or else the count from last high will not work.)
+        mutate(max52occured=as.integer(if_else(max52week==high,1,0, 0)))%>%
+        ### - the difference between the 52 week max and the close
+        mutate(difPerc52max=(max52week-close)/max52week)%>%
+        ### - count sequentially how many days it has been since the 52 week high. 
+        mutate(panel="a")%>%
+        group_by(panel, idx=cumsum(max52occured==1L))%>%
+        mutate(since52weekHigh=row_number())%>%
+        ungroup%>%
+        select(-idx)%>%
+        
+        ## Calculate the 52 week min (same variables were calculated for min as max)
+        mutate(min52week=roll_min(low, n=252, align="right", fill=NA, na.rm=FALSE))%>%
+        mutate(min52occured=as.integer(if_else(min52week==low,1,0,0)))%>%
+        mutate(difPerc52min=(close-min52week)/min52week)%>%
+        group_by(panel, idx=cumsum(min52occured==1L))%>%
+        mutate(since52weekLow=row_number())%>%
+        ungroup%>%
+        select(-idx, -panel)%>%
+        
+        ## calculate the classifyers used for randomForests
+        ### - make 15 and 30 moving windows. 
+        mutate(period_price_diff = c(tail(close, -15), rep(NA, 15)))%>%
+        mutate(period_window_perc=(period_price_diff-close)/close*100)%>%
+        mutate( test_variable = if_else(period_window_perc<5, 0 , 1, NA_real_ ))%>%
+        mutate(ticker = ticker)
+      
+      
+      return(ind)
+      
+    }else{
+      
+      return(ticker_data)
+      
+    }
+    
+  }else{
+    
+    return(NULL)
+    
+  }
+  
+}
+```
+
+
+

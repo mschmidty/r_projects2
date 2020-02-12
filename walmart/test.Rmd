@@ -1,0 +1,42 @@
+---
+title: "Walmart Stores"
+author: "Mike Schmidt"
+date: "9/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(sf)
+library(rgdal)
+library(raster)
+library(ggmap)
+```
+
+```{r}
+data<-read_tsv("https://d32ogoqmya1dw8.cloudfront.net/files/NAGTWorkshops/gis/activities/walmart_locations.txt")
+
+walmart_stores<-data%>%
+  mutate_geocode(STREETADDR)
+
+data_head<-head(data, 20)
+
+test_data<-data_head%>%
+  mutate_geocode(STREETADDR)
+
+write_csv(test_data, "data/walmart_test_data.csv")
+
+View(test_data)
+
+register_google(key = "AIzaSyA2MQr7a-yWrB-vfmBeKFBiwyvzP0OnBd8", write = TRUE)
+has_google_key()
+```
+
+
+
+
+

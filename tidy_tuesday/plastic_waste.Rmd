@@ -1,0 +1,51 @@
+---
+title: "Tidy Tuesday"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+
+theme_set(theme_minimal)
+```
+
+```{r}
+coast_vs_waste <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/coastal-population-vs-mismanaged-plastic.csv")
+
+mismanaged_vs_gdp <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-mismanaged-plastic-waste-vs-gdp-per-capita.csv")
+
+waste_vs_gdp <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-plastic-waste-vs-gdp-per-capita.csv")
+```
+
+```{r}
+avg_waste_per_capita<-coast_vs_waste%>%
+  rename(entity=1, code=2, year=3, mismanaged_plastic=4, coastal_pop=5, total_pop=6 )%>%
+  group_by(entity)%>%
+  summarize(mismanaged_plastic = mean(mismanaged_plastic, na.rm=T), avg_pop = mean(total_pop))%>%
+  mutate(mismanaged_plastic_per_capita = mismanaged_plastic/avg_pop )
+
+avg_waste_per_capita%>%
+  drop_na()%>%
+  filter(mismanaged_plastic_per_capita>0.005)%>%
+  ggplot(aes(x=entity, y=mismanaged_plastic_per_capita))+
+    geom_bar(stat="identity", fill="tomato3")+
+    theme_minimal()+
+    theme(axis.text.x = element_text(angle=65, vjust=0.6))
+    
+
+
+avg_waste_per_capita%>%
+  drop_na()%>%
+  ggplot(aes(x=entity, y=mismanaged_plastic_per_capita))+
+    geom_bar(stat="identity", fill="tomato3")+
+    theme(axis.text.x = element_text(angle=65, vjust=0.6))
+
+    
+    
+```
+

@@ -1,0 +1,106 @@
+---
+title: "Testing New Incicators"
+author: "Mike Schmidt"
+date: "8/25/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(TTR)
+library(tidyverse)
+library(caret)
+```
+
+## Bollinger 
+```{r}
+data<-readRDS('data/AAPL.rds')%>%
+  bind_cols(as_tibble(BBands(select(. , high, low, close))))%>%
+  select(-dn, -mavg, -up)%>%
+  bind_cols(as_tibble(SAR(select( . ,high, low))))
+
+period_test<-function(stock_data, period_to_test){
+  stock_data%>%
+    mutate(period_price_diff = c(tail(close, -(period_to_test)), rep(NA, period_to_test)))%>%
+    mutate(period_window_perc=(period_price_diff-close)/close*100)%>%
+    mutate( test_variable = if_else(period_window_perc<10, 0 , 1, NA_real_ ))
+}
+
+rf_data<-period_test(data, 20)%>%
+  select(date, obv:ult_osc, pctB, sar, period_window_perc)%>%
+  drop_na()
+
+```
+
+## Feature Selection
+
+```{r}
+
+findCorrelation(cor(data.matrix(select(rf_data, -period_window_perc))), .8)
+
+data_clean<-select(rf_data, -6, -10, -8, -13, -7, -4, -1)
+
+#Feature selection using rfe in caret
+control <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 3,
+                   verbose = FALSE)
+
+outcomeName<-'period_window_perc'
+predictors<-names(rf_data)[!names(rf_data) %in% outcomeName]
+
+x<-rf_data[,predictors]
+y<-as.matrix(rf_data[,outcomeName])
+
+Loan_Pred_Profile <- rfe(x, y,
+                      rfeControl = control)
+
+```
+
+
+
+```{r}
+rf_data<-rf_data%>%
+  select(date, obv, sar, volatility, signal, period_window_perc)
+
+train<-head(rf_data, round(0.95*nrow(rf_data)))%>%
+  select(-date)
+test<-tail(rf_data, round(0.05*nrow(rf_data)))
+test2<-head(test, 100)
+```
+
+```{r}
+train_control <- trainControl(	method="cv",
+                                       number=5,
+                                       classProbs = TRUE,
+                                       savePredictions = TRUE, 
+                                       sampling = "down")
+rf<- train(
+          period_window_perc~ ., 
+          data = train, 
+          method="rf", 
+          trCrontrol = train_control,
+          ntree=200, 
+          na.action = na.pass, 
+          tuneGrid = expand.grid(.mtry = 9), 
+          importance = TRUE
+        )
+
+rf
+varImp(rf)
+
+prediction<-test2%>%
+  mutate(prediction = predict(rf, test2), diff = abs(prediction-period_window_perc))
+
+prediction%>%
+  ggplot(aes(x = prediction, y = period_window_perc, size = diff))+
+    geom_point(alpha = 0.5)
+
+cor(predict(rf, test2), test2$period_window_perc)
+```
+
+
+

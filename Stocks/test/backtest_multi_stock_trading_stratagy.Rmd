@@ -1,0 +1,190 @@
+---
+title: "Back Test Multi Stock Strategy"
+author: "Mike Schmidt"
+date: "6/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Libraries
+```{r}
+library(tidyverse)
+library(quantmod)
+library(lubridate)
+library(TTR)
+library(RcppRoll)
+library(caret)
+library(magrittr)
+```
+
+
+## Make dates to backtest model
+
+Read in stock with correct dates. 
+```{r}
+stock <- "MSFT"
+
+start<-as.Date("1970-01-01")
+
+end<-as.Date(today())
+data<-getSymbols(stock, src="yahoo", auto.assign = FALSE, from=start, to=end)
+df<-data.frame(date=index(data), coredata(data))
+
+data_cl<-df%>%
+  rename(open=2, high=3, low=4, close=5, volume=6, adjusted=7)%>%
+  mutate(id = row_number())%>%
+  as_tibble()
+head(data_cl)
+
+data_cl%>%
+  select(date)%>%
+  rename(date_buy = date)%>%
+  mutate(trade_date=ifelse(row_number()%%30 == 0, "TRADE", NA))%>%
+  filter(trade_date == "TRADE")%>%
+  mutate(date_sell = c(tail(date_buy, -1), rep(NA, 1)))%>%
+  select(-trade_date)%>%
+  head(-1)%>%
+  write_csv("test/date_list/date_list_buy_sell_30.csv")
+```
+
+
+## Run random forest function
+
+Select Dates
+```{r}
+dates_to_trade<-read_csv("test/date_list/date_list_buy_sell_30.csv")
+
+print_dates<-function(x){
+  print(x[1], x[2])
+}
+
+
+for(row in 1:nrow(dates_to_trade)){
+  buy<- dates_to_trade[row, "date_buy"]%>%
+    pull()
+  sell<-dates_to_trade[row, "date_sell"]%>%
+    pull()
+  print(c(buy, sell))
+}
+
+unlist_dates_to_trade<-dates_to_trade%>%
+  select(date)%>%
+  tail(30)%>%
+  pull()
+```
+
+
+How to backtest investment!
+
+1. Take dates to invest. 
+2. On those dates run prediction
+3. Buy 3 stocks.  
+  * Take total money divide by three and buy an even amount of each share. 
+4. Sell Stock at the end of the term.  
+5. Record the total amount. 
+6. Use current amount to rerun algorithm. 
+
+
+```{r}
+source("R/predict_functions.R")
+
+backtest_algo<-function(end_date, list_of_stocks, start_date){
+  
+  predicted_list<-lapply(list_of_stocks, stock_price_rf, start_date, end_date)
+  
+  rf_result<-bind_rows(predicted_list)%>%
+    filter(prediction=="1")%>%
+    group_by(ticker)%>%
+    count(prediction)
+  
+  
+  ##For Each Ticker, up to three, purchase a stock
+  
+  tickers_to_buy<-rf_result%>%
+    arrange(n)%>%
+    tail(3)
+  
+  print(tickers_to_buy)
+  print(length(tickers_to_buy))
+    
+  tickers_to_buy<-tickers_to_buy%>%  
+    select(ticker)%>%
+    pull()
+  
+  future_end<-end_date+15
+  
+  purchased_stocks<-lapply(tickers_to_buy, get_stock, end_date, future_end, FALSE)%>%
+    bind_rows()%>%
+    as_tibble()
+  
+  fund_total<-read_csv("output/performance.csv")%>%
+    tail(1)%>%
+    select(sale_value)%>%
+    pull()
+  
+  purchased_stocks%>%
+    group_by(symbol)%>%
+    mutate(shares_purchased = fund_total/length(tickers_to_buy)/open[1])%>%
+    mutate(value=shares_purchased*close)%T>%
+    write_csv("output/data_log.csv",append = TRUE)%>%
+    filter(date==max(date))%T>%
+    print()%>%
+    ungroup()%>%
+    summarize(sum=sum(value))%>%
+    mutate(stocks_purchased = paste(tickers_to_buy, sep="", collapse = ", "))%>%
+    rename(sale_value=sum)%>%
+    mutate(date_purchase = end_date)%>%
+    mutate(date_sold = future_end)%>%
+    mutate(gain_loss = (sale_value-fund_total))%>%
+    mutate(gain_loss_perc = gain_loss/fund_total*100)%>%
+    write_csv("output/performance.csv", append = TRUE)
+}
+
+begin_test_date<-as.Date("1970-01-01")
+
+stock_list <- c("NKE","KR","GILD","CSCO", "AMAT", "NVDA", "WMT","CBS","CMCSA", "F","FB", "NFLX", "T", "TSLA", "TMUS", "TWTR", "ADBE", "MSFT", "SPWR", "GPRO", "SBUX", "F", "BABA", "BAC", "GE", "JD", "WM")
+stock_list <- c("NKE","KR","GILD","CSCO", "AMAT", "NVDA", "WMT","CBS","CMCSA", "F","FB", "NFLX", "T", "TSLA", "TMUS", "ADBE", "MSFT", "SPWR", "SBUX", "F", "BAC", "GE",  "WM")
+stock_list<- c("NKE","KR","GILD","CSCO", "AMAT", "NVDA", "WMT","CBS","CMCSA", "F","FB", "NFLX", "T", "TSLA")
+stock_list<- c("NKE","KR","GILD","CSCO", "AMAT")
+
+final_list<-lapply(unlist_dates_to_trade, backtest_algo, stock_list, begin_test_date)
+
+```
+
+
+```{r}
+write_csv(new_csv, "output/performance.csv")
+
+
+write_csv(performance, "output/performance.csv", append=TRUE)
+read_csv("output/performance.csv")
+
+read_csv("output/performance.csv")%>%
+  head(1)%>%
+  write_csv("output/performance.csv")
+```
+
+
+```{r}
+sale_value <- c(1000)
+stocks_purchased <- c("TEST, TEST")%>%
+  as.character()
+date_purchased <- as.Date(c("2018-01-01")) 
+date_sold <- as.Date(c("2018-01-01"))  
+gain_loss <- c(9999)
+gain_loss_perc <- c(9999)
+new_csv<-data.frame(sale_value, stocks_purchased, date_purchased, date_sold, gain_loss, gain_loss_perc)%>%
+  as_tibble()
+
+
+length(c("TSLA", "NFLX", "F"))
+
+```
+
+
+
+

@@ -1,0 +1,28 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(lubridate)
+theme_set(theme_classic())
+
+park_visits <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-09-17/national_parks.csv")
+state_pop <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-09-17/state_pop.csv")
+gas_price <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-09-17/gas_price.csv")
+
+park_visits%>%
+  group_by(year)%>%
+  summarize(visitors = sum(visitors), count = n())%>%
+  ungroup()%>%
+  mutate(visitors_per_park = visitors/count)%>%
+  mutate(year = as.numeric(year))%>%
+  ggplot(aes(year, visitors_per_park))+
+    geom_area(fill = "red", alpha = 0.5)
+```

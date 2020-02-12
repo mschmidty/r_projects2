@@ -1,0 +1,110 @@
+---
+title: "Most Predictive Period"
+author: "Mike Schmidt"
+date: "8/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(caret)
+```
+
+## Load some data to work with 
+This data was loaded and saved useing the modified `get_stock()` function from the `test/testing_different_predictions_methos.Rmd` file.  
+
+Here I am loading and subsetting the data to the fields that I will need to test periods. 
+
+```{r}
+data<-readRDS('data/AAPL.rds')%>%
+  select(date, close, obv:ult_osc, max52week:since52weekLow)
+```
+
+
+I want to test different periods and see if sertain periods are more predictive than others.  
+
+mutate(period_price_diff = c(tail(close, -15), rep(NA, 15)))%>%
+        mutate(period_window_perc=(period_price_diff-close)/close*100)%>%
+        mutate( test_variable = if_else(period_window_perc<5, 0 , 1, NA_real_ ))%>%
+        mutate(ticker = ticker)
+
+```{r}
+period_test<-function(stock_data, period_to_test){
+  stock_data%>%
+    mutate(period_price_diff = c(tail(close, -(period_to_test)), rep(NA, period_to_test)))%>%
+    mutate(period_window_perc=(period_price_diff-close)/close*100)%>%
+    mutate( test_variable = if_else(period_window_perc<10, 0 , 1, NA_real_ ))
+}
+
+rf_data<-period_test(data, 30)%>%
+  drop_na()%>%
+  select(-close, -period_price_diff, -test_variable)%>%
+  select(-roc, -min52occured, -max52occured) ##removed stuff
+```
+
+```{r}
+set.seed(420)
+
+train<-head(rf_data, round(0.95*nrow(rf_data)))%>%
+  select(-date)
+test<-tail(rf_data, round(0.05*nrow(rf_data)))
+test2<-head(test, 100)
+```
+## Random Forest
+```{r}
+train_control <- trainControl(	method="cv",
+                                       number=5,
+                                       classProbs = TRUE,
+                                       savePredictions = TRUE, 
+                                       sampling = "down")
+rf<- train(
+          period_window_perc~ ., 
+          data = train, 
+          method="rf", 
+          trCrontrol = train_control,
+          ntree=150, 
+          na.action = na.pass, 
+          tuneGrid = expand.grid(.mtry = 9), 
+          importance = TRUE
+        )
+
+rf
+varImp(rf)
+
+prediction<-test2%>%
+  mutate(prediction = predict(rf, test2), diff = abs(prediction-period_window_perc))
+
+prediction%>%
+  select(date, period_window_perc, prediction, diff)%>%
+  View()
+
+prediction%>%
+  ggplot(aes(x = prediction, y = period_window_perc, size = diff))+
+    geom_point(alpha = 0.5)
+
+test
+
+cor(predict(rf, test2), test2$period_window_perc)
+```
+
+Seems to predict 50 to 100 periods at about a corr of 0.4. Degrades after that. 
+
+
+
+
+
+## Neural Network Regression
+```{r}
+rec_reg <- recipe(period_window_perc ~ ., data = train) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors()) 
+trainX <- train[, -ncol(train)]
+trainY <- train$period_window_perc
+```
+
+

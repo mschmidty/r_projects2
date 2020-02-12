@@ -1,0 +1,37 @@
+---
+title: "object_detection"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This Rmarkdown file is following the [object detection tutorial on Rstudio](https://blogs.rstudio.com/tensorflow/posts/2018-11-05-naming-locating-objects/).  I am doing this tutorial because I want to familiarize myself with tensorflow and keras and I also am hoping to be able to count objects for a project I am doing at work which will require going through thousands of images. 
+
+Download instructions for files.  I saved them in the folder `data_1` for this tutorial. 
+
+```
+# mkdir data && cd data
+# curl -OL http://pjreddie.com/media/files/VOCtrainval_06-Nov-2007.tar
+# curl -OL https://storage.googleapis.com/coco-dataset/external/PASCAL_VOC.zip
+# tar -xf VOCtrainval_06-Nov-2007.tar
+# unzip PASCAL_VOC.zip
+# mv PASCAL_VOC/*.json .
+# rmdir PASCAL_VOC
+# tar -xvf VOCtrainval_06-Nov-2007.tar
+
+```
+### Load Packages
+```{r}
+library(keras)
+library(rjson)
+library(magick)
+library(purrr)
+library(tibble)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+```
+

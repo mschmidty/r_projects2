@@ -1,0 +1,26 @@
+---
+title: "Tensorflow Classification with Keras"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Image classification with Keras.  I would like to be able to tell if there are deer or elk or mountain lions, etc. in an image.  This is the first try to get to that goal.  
+
+I'm working through the following tutorial: [RStudio Basic Classification](https://tensorflow.rstudio.com/keras/articles/tutorial_basic_classification.html)
+
+## Load the libraries
+```{r}
+library(keras)
+library(reticulate)
+
+reticulate::use_python("~/.pyenv/versions/3.7.3/bin/python3", required=T)
+reticulate::py_discover_config("keras")
+```
+
+## Load the fashion mnist dataset from Keras
+```{r}
+fashion_mnist <- dataset_fashion_mnist()
+```
+

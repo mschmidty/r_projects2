@@ -1,0 +1,154 @@
+---
+title: "Backtest"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load necessary packages
+```{r}
+options(scipen=999)
+library(TTR)
+library(quantmod)
+library(tidyverse)
+library(RcppRoll)
+library(lubridate)
+```
+
+## Pick Stock
+```{r}
+stock <- "T"
+```
+
+
+## Download Stock data
+Dates 2005 to April 2018
+```{r}
+
+start<-as.Date("1990-01-01")
+end<-as.Date("2018-08-19")
+stock_info<-getSymbols(stock, src="yahoo", auto.assign = FALSE, from=start, to=end)
+df<-data.frame(date=index(stock_info), coredata(stock_info))
+
+data_cl<-df%>%
+  rename(open=2, high=3, low=4, close=5, volume=6, adjusted=7)%>%
+  mutate(id = row_number())
+
+```
+
+# Create Simple indicators
+```{r}
+data<-data_cl%>%
+  ##get yesterdays close
+  mutate(yesterday_close = head(c(NA, close), -1))%>%
+  ## calculate the gain for the day
+  mutate(gain_loss=close-yesterday_close)%>%
+  
+  ## calculate the percent gain/loss for the day
+  mutate(percent_gain_loss=gain_loss/yesterday_close*100)%>%
+  
+  ## calculate the classifyers used for randomForests
+  ### - make 15 and 30 moving windows. 
+  ## mutate(window15=roll_sum(percent_gain_loss, n=15, align="left", fill=NA, na.rm=FALSE))%>%
+  
+  mutate(day30price = c(tail(close, -30), rep(NA, 30)))%>%
+  mutate(window30=(day30price-close)/close*100)%>%
+  
+  ### - creates 4 categories for the 15 moving window analysis: 0 == if window is less than 0 (stock was negative for last 15 days), 1 == if stock went up by more than 0% but less than 10% over the last 15 days, 2 == if stock went up between 10% and 20%, and 3 == stock went up more than 30%. 
+  ##mutate(classify15=if_else(window15<=0, 0 , if_else(window15>0 & window15<10, 1, if_else(window15>10 & window15<20, 2, 3, NA_real_ ))))%>%
+  ### - same as last but for 30 days
+  mutate(classify30=if_else(window30<=0, 0 , if_else(window30>0 & window30<10, 1, if_else(window30>10 & window30<20, 2, 3, NA_real_ ))))%>%
+  
+  ### - these are just easy classifyers, if stock goes up assign 1 if stock goes down classify as 0 for 15 sand 30 day windows. 
+  ##mutate(classify15easy=if_else(window15<10, 0 , 1, NA_real_ ))%>%
+  ##mutate(classify30easy=as.integer(if_else(window30<0, -1 , ifelse(window30>10, 1, 0))))
+  mutate(classify30easy=if_else(window30<10, 0 , 1, NA_real_ ))
+
+
+```
+
+Buy Sell Test
+```{r}
+shares_purchased<-100
+backtest_data<-data%>%
+  select(date, open, close, percent_gain_loss, window30, classify30easy)%>%
+  mutate(last30 = roll_sumr(classify30easy, n=30))%>%
+  mutate(last30 = ifelse(!is.na(last30), last30, cumsum(classify30easy)))%>%
+  mutate(purchased = ifelse(last30>=1, shares_purchased, 0))%>%
+  mutate(value = purchased*close)%>%
+  mutate(yesterdays_value = head(c(NA, value), -1))%>%
+  mutate(tomorrows_value = c(tail(value, -1), NA))%>%
+  mutate(trade = ifelse(yesterdays_value-value==-value & tomorrows_value != 0 & value!=0, "BUY", ifelse(value==0 & yesterdays_value!=0, "SELL", NA)))%>%
+  mutate(hold = 10*close)
+
+starting_value_stock <- backtest_data%>%
+  filter(trade=="BUY")%>%
+  head(1)%>%
+  select(value)%>%
+  unlist(use.names=FALSE)
+
+starting_date<-backtest_data%>%
+  filter(trade=="BUY")%>%
+  head(1)%>%
+  select(date)%>%
+  unlist(use.names = FALSE)
+
+buy_sell<-backtest_data%>%
+  filter(!is.na(trade))%>%
+  select(date,trade, hold, value)
+
+alpha<- 
+  if(nrow(filter(buy_sell, trade=="BUY"))==nrow(filter(buy_sell, trade=="SELL"))){
+    buy_sell%>%
+      filter(trade=="BUY")%>%
+      bind_cols(filter(buy_sell, trade=="SELL"))%>%
+      rename(buy_value=hold, sell_value = hold1)%>%
+      mutate(alpha_1=sell_value-buy_value)%>%
+      mutate(sum_value=cumsum(alpha_1))
+  }else{
+    head(buy_sell, -1)%>%
+      filter(trade=="BUY")%>%
+      bind_cols(filter(buy_sell, trade=="SELL"))%>%
+      rename(buy_value=hold, sell_value = hold1)%>%
+      mutate(alpha_1=sell_value-buy_value)%>%
+      mutate(sum_value=cumsum(alpha_1))
+  }
+
+alpha<-alpha%>%
+  mutate(total = sell_value*shares_purchased+alpha_1)%>%
+  mutate(total=sell_value+sum_value)%>%
+  rename(buy_date=date, sell_date=date1)%>%
+  mutate(rate_of_return = (total-starting_value_stock)/starting_value_stock*100)%>%
+  mutate(years_since_start = as.numeric(difftime(as.Date(sell_date), as.Date(starting_date), unit = 'weeks'))/52.25)%>%
+  mutate(annual_rate_of_return = rate_of_return/years_since_start)
+ 
+tail(alpha)
+```
+
+Compare with the SandP 500
+```{r}
+
+
+compare_stock<-"VFINX"
+cs_data<-getSymbols(compare_stock, src="yahoo", auto.assign = FALSE, from=start, to=end)
+cs_df<-data.frame(date=index(cs_data), coredata(cs_data))
+
+cs_data_cl<-cs_df%>%
+  as_tibble()%>%
+  rename(open=2, high=3, low=4, close=5, volume=6, adjusted=7)%>%
+  mutate(id = row_number())
+
+starting_value_compare_stock<-head(cs_data_cl, 1)%>%
+  select(close)%>%
+  unlist(use.names=FALSE)
+
+number_of_shares<-starting_value_stock/starting_value_compare_stock
+
+tail(cs_data_cl)%>%
+  mutate(total=number_of_shares*close)
+```
+
+
+

@@ -1,0 +1,45 @@
+---
+title: "Robinhood Test"
+author: "Mike Schmidt"
+date: "3/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(RobinHood)
+```
+
+```{r}
+username<-"email"
+password<-"password"
+```
+
+```{r}
+rh<-RobinHood(username, password)
+```
+
+## Get order history
+```{r}
+order_history<-get_order_history(rh)
+order_history
+```
+
+```{r}
+quote<-get_quote(rh, c("TWTR", "BAS"))
+quote
+```
+
+```{r}
+
+```
+
+
+
+
+
+
