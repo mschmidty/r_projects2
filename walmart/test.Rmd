@@ -32,11 +32,6 @@ write_csv(test_data, "data/walmart_test_data.csv")
 
 View(test_data)
 
-register_google(key = "AIzaSyA2MQr7a-yWrB-vfmBeKFBiwyvzP0OnBd8", write = TRUE)
+register_google(key = "GOOGLE KEY", write = TRUE)
 has_google_key()
 ```
-
-
-
-
-
