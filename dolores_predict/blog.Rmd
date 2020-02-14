@@ -316,14 +316,14 @@ set.seed(1234)
 
 control <- trainControl(method="repeatedcv", number=10, repeats=3, search = "random")
 
-rf_default <- train(raftable_releases~avg_snow_water_e+min_vol, 
+rf_default2 <- train(raftable_releases~avg_snow_water_e+min_vol, 
                     data=var_df_train, 
                     method="rf", 
                     tuneLength=3,
                     ntree = 2000,
                     trControl=control)
 
-rf_default
+rf_default2
 ```
 Here we build a cross validated random forest regression model to go predict number of raftable days. 
 * `meothod = "repeatedcv"` is repeated cross validation where we do 10 cross validations 3 times with a random search.  
@@ -350,7 +350,7 @@ Pretty good.  Again, I keep saying this becuase it is really important, we would
 ## So what about this year
 ```{r}
 var_df_test%>%
-  mutate(prediction = predict(rf_default, .))
+  mutate(prediction = predict(rf_default2, .))
 ```
 
 So far the model predicts we will have 3.53 days of raftable flows.  I'd say that is within the margin of error of 0 days looking at past predictions. 
