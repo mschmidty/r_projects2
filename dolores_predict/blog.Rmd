@@ -9,16 +9,23 @@ fig_height: 8
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, dpi=300, fig.height = 8, fig.width = 11, dev = "jpeg")
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE, 
+                      dpi=300, 
+                      fig.height = 8, 
+                      fig.width = 11, 
+                      dev = "jpeg",
+                      class.output  = "r-output")
 ```
+I live next to the Dolores River.  It's an often overlooked gem of the southwest.    It runs from just outside Rico, Colorado at its headwaters to the Colorado River outsite Moab, Utah. It's an experience. Most of the river is mellow and beutiful. But two technical rapids keep things interesting
 
 ## Load Packages
 ```{r}
 library(tidyverse) ## For all the data cleaning work.
 library(lubridate) ## For working with dates. 
 library(extrafont) ## For Font Graphics
-library(kableExtra)
-theme_set(theme_light())
+options(scipen = 999)
 
 t<-theme_light()+
   theme(
@@ -201,6 +208,9 @@ se_site<-all_sntl_data%>%
     date = as.Date(Date)
     )%>%
   rename(snow_depth = 2, snow_water_eq=3)%>%
+  filter(site_id_num %in% c(465, 586, 589, 739))
+
+se_site_year<-se_site%>%
   group_by(year(date), site_id_num)%>%
   summarize(max_se = max(snow_water_eq, na.rm = T))%>%
   ungroup()%>%
@@ -218,8 +228,8 @@ se_site
 
 ### Combining a subset of sites
 ```{r}
-avg_snwater_eq<-se_site%>%
-  filter(year>1986&site_id_num %in% c(465, 586, 589, 739))%>%
+avg_snwater_eq<-se_site_year%>%
+  filter(year>1986)%>%
   group_by(year)%>%
   summarize(avg_snow_water_e = mean(max_se))%>%
   ungroup()
@@ -244,6 +254,95 @@ The steps we took to get that data:
 5. We combined each sites data into one dataframe. 
 6. We then grouped the data to get the max snow water equivalent for each site for each year. 
 7. We then averaged the maxes from four sites to get one average snow water equivalent per year. 
+
+## Prediction of Future Snowpack
+We'll use the {fable} package for timeseries forecasting. 
+```{r}
+library(fable) #For prediction
+```
+
+For forecasting we need an average of all four sites per day.  We want to predict what the average will be.  
+```{r}
+avg_sn<-se_site%>%
+  filter(year(Date)>1987)%>%
+  group_by(Date)%>%
+  summarize(avg_sn_eq =  mean(snow_water_eq, rm.na = T))%>%
+  ungroup()%>%
+  mutate(Date = as.Date(Date))
+  
+
+avg_sn
+```
+
+* We filter years after 1987 because we don't want the year that they were filling the reservior to influence the prediction. 
+* Next we group by `Date` which is daily and then `summarize`, averaging all four sites for that day. We `ungroup` to prevent weird stuff from happening. 
+* And lastly we convert the `Date` column, which for some reaon was converted to a `character`,  to an actual date with `as.Date`. 
+
+Let see what it looks like:
+
+```{r}
+avg_sn%>%
+  ggplot(aes(Date, avg_sn_eq))+
+  geom_line(color = "#1AB8FF", size = 2, alpha = 0.5)+
+  labs(title = "Average Snow Water Equivalant",
+       subtitle = "From four Snotel Sites in the Dolores River watershed", 
+       y = "Avg. Snow Water Equivalant")
+```
+
+
+To do a timeseries forcast we need to convert the data into `tsibble` format.  I don't know a ton about tsibbles.  I think they are basically just a tibble with an `time` index. 
+
+```{r}
+avg_sn_ts<-avg_sn%>%
+  as_tsibble(index = Date)
+```
+
+Next we will make our model.   I by no means am an expert at forecasting (this took me an embarassingly long time).  Many of my initial tries failed using a variety of other models.  I finally got and auto `ARIMA` forecast to work using fourier.  If you want to learn more about forecasting, check out [Rob Hyndman's Blog](https://robjhyndman.com/hyndsight/fable/).
+```{r}
+fit<-avg_sn_ts%>%
+  model(
+    arima = ARIMA(avg_sn_eq~fourier("year", K = 15))
+  )
+
+fit%>%
+  forecast(h = "3 months")%>%
+  autoplot(avg_sn_ts%>%filter(year(Date)>2018))+
+  geom_line(color = "#ffffff", size = 2)+
+  labs(title = "Snowpack Prediction",
+       subtitle = "Dolores River watershed Snotel sites", 
+       y = "Avg. Snow Whater Equivalant")
+
+##saveRDS(fit, "output/models/arima_forecast.rds")
+```
+
+Looking at the forecast in the `autoplot()` which is just an easy ggplot for forecasting, it looks to me that the forecast looks pretty good, but might be a bit optimistic for the average.  But it's hard to tell. We could get a lot of snow in the end of February or March. It gives us a good range to work with and use in our predictions. 
+
+To use in our prediction we need a max, min and average value for the max snowpack.  
+
+```{r}
+pred_sn_pk<-fit%>%
+  forecast(h = "6 months")%>%
+  filter(avg_sn_eq == max(avg_sn_eq))%>%
+  mutate(ci_90 = hilo(.distribution, 90))%>%
+  mutate(pred_lower = ci_90$.lower, pred_upper = ci_90$.upper)%>%
+  as_tibble()%>%
+  rename(pred_avg_sn_eq = avg_sn_eq)%>%
+  select(Date, pred_avg_sn_eq, pred_lower, pred_upper)%>%
+  pivot_longer(-Date, names_to = "estimated_eq", values_to = "avg_snow_water_e")%>%
+  mutate(year = year(Date))%>%
+  select(-Date)
+
+pred_sn_pk
+
+```
+* User our model to `forecast()` six months out. 
+* `filter` out the `max` value for the average (this isn't perfect but it will work for our purposes).
+* Add a column with higher and lower values based on a 90% confidence interval using the `hilo` function.
+* convert to a tibble. 
+* Select only the values we want. 
+* `pivot_longer` so that we have a `year` column and a snow_water_equivalant column.
+* Make a `year` column.  
+* drop the `Date` column.
 
 ## Reservoir Volume
 
@@ -314,16 +413,15 @@ var_df_train
 library(caret)
 set.seed(1234)
 
-control <- trainControl(method="repeatedcv", number=10, repeats=3, search = "random")
+control <- trainControl(method="cv", number=10)
 
-rf_default2 <- train(raftable_releases~avg_snow_water_e+min_vol, 
+rf_model <- train(raftable_releases~avg_snow_water_e+min_vol, 
                     data=var_df_train, 
                     method="rf", 
                     tuneLength=3,
-                    ntree = 2000,
                     trControl=control)
 
-rf_default2
+rf_model
 ```
 Here we build a cross validated random forest regression model to go predict number of raftable days. 
 * `meothod = "repeatedcv"` is repeated cross validation where we do 10 cross validations 3 times with a random search.  
@@ -335,9 +433,9 @@ Here we build a cross validated random forest regression model to go predict num
 WARNING: this is not how you should evaluate a model typically like I said above.  
 ```{r}
 var_df_train%>%
-  mutate(prediction = stats::predict(rf_default, .))%>%
+  mutate(prediction = stats::predict(rf_model, .))%>%
   ggplot(aes(raftable_releases, prediction))+
-  geom_point(color = "#1AB8FF", size =3, alpha = 0.6)+
+  geom_point(color = "#1AB8FF", size =4, alpha = 0.6)+
   geom_text(aes(label=year),hjust=-0.3, vjust=-0.3, color = "#FFFFFF")+
   labs(title = "Predicted vs Actual Raftable Release Days", 
        x = "Actual Release Days", 
@@ -350,10 +448,75 @@ Pretty good.  Again, I keep saying this becuase it is really important, we would
 ## So what about this year
 ```{r}
 var_df_test%>%
-  mutate(prediction = predict(rf_default2, .))
+  mutate(prediction = predict(rf_model, .)) 
+
 ```
 
-So far the model predicts we will have 3.53 days of raftable flows.  I'd say that is within the margin of error of 0 days looking at past predictions. 
+So far the model predicts we will have `r predict(rf_model, var_df_test)` days of raftable flows.  I'd say that is within the margin of error of 0 days looking at past predictions.  But what if we get more snow?  Given that it is February and Peak snow is typically around mid March would be a good assumption. 
+
+Let's add the snotel forcast from the ARIMA model above to the predicted dataset. 
+
+```{r}
+pred_sn_pk_1<-pred_sn_pk%>%
+  mutate(min_vol = var_df%>%
+           filter(year == 2020)%>%
+           pull(min_vol))
+
+test_data<-var_df%>%
+  filter(year==2020)%>%
+  select(-raftable_releases)%>%
+  mutate(estimated_eq = "current")%>%
+  bind_rows(pred_sn_pk_1)
+
+test_data
+```
+
+
+Now let's use the prediction for `current`, `pred_avg_sn_eq`, `pred_lower`, and `pred_upper`
+
+```{r}
+test_data%>%
+  mutate(prediction = stats::predict(rf_model, .))
+```
+
+That's a bit of an odd result. The model predicts a greater number of release days for the predicted snow water equivalant of 13.2 than it does for 10.4.  If you look at the last graph though that kind of makes sense.  There is a lot of noise at the beginning of the graph.  
+
+Let's try something a bit simpler, like a linear model.  
+
+```{r}
+model_lm<-glm(raftable_releases~avg_snow_water_e+min_vol, family = "poisson", data = var_df_train)
+
+##saveRDS(model_lm, "output/models/lm_model.rds")
+
+summary(model_lm)
+```
+
+This model looks pretty good. 
+```{r}
+model_lm%>%
+  augment(data = var_df_train, type.predict = "response")%>%
+  ggplot(aes(raftable_releases, .fitted))+
+  geom_point(color = "#1AB8FF", size =4, alpha = 0.6)+
+  geom_text(aes(label=year),hjust=-0.3, vjust=-0.3, color = "#FFFFFF")+
+  labs(title = "Linear Model Raftable Days Predict",
+       subtitle = "Actual Values vs. Predicted Values",
+       y = "Predicted Values",
+       x = "Actual Raftable Release Days")
+```
+This model doesn't fit the data quite as well. Lets see how it predicts the predictions. 
+```{r}
+model_lm%>%
+  augment(newdata = test_data, type.predict = "response")
+```
+That looks more rational than the random forest model. The results: 
+* Current snowpack = 5.21 days
+* predicted peak snowpack = 9.6 days.
+* predicted lower snowpack = 4.86 (this really isn't rational considering current is already greater than it).
+* predicted upper snowpack = 18.9 days (let it snow let it snow).
+
+I'll continue to run this as the winter progresses.  We now have a model that we can push into production to predict future data sets. 
+
+
 
 
 
