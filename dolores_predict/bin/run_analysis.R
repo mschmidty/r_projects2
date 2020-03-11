@@ -8,9 +8,9 @@ library(RNRCS)
 dolores_site_ids<-c(465, 586, 589, 739)
 
 get_snotl_data<-function(site_id){
-  grabNRCS.data(network = "SNTL", 
-                site_id = site_id, 
-                timescale = "daily", 
+  grabNRCS.data(network = "SNTL",
+                site_id = site_id,
+                timescale = "daily",
                 DayBgn = 01-01-1986,
                 DayEnd = Sys.Date()
   )%>%
@@ -20,6 +20,7 @@ get_snotl_data<-function(site_id){
 
 all_sntl_data<-lapply(dolores_site_ids, get_snotl_data)%>%
   bind_rows()
+
 
 ## Subset data and convert to tsibble (Time Series Tibble)
 se_site<-all_sntl_data%>%
@@ -75,8 +76,8 @@ pred_sn_pk<-fit%>%
 
 ## Pull BOR data for the last year.
 
-bor_data<-grabBOR.data(site_id = "MPHC2000", 
-                       timescale = 'daily', 
+bor_data<-grabBOR.data(site_id = "MPHC2000",
+                       timescale = 'daily',
                        DayBgn = Sys.Date()-months(6),
                        DayEnd = Sys.Date())%>%
   as_tibble()%>%
@@ -97,19 +98,26 @@ var_df<-avg_snwater_eq%>%
 
 pred_sn_pk_1<-pred_sn_pk%>%
   mutate(min_vol = var_df%>%
-           filter(year == 2020)%>%
+           filter(year == year(Sys.Date()))%>%
            pull(min_vol))
 
 test_data<-var_df%>%
-  filter(year==2020)%>%
+  filter(year==year(Sys.Date()))%>%
   mutate(estimated_eq = "current")%>%
   bind_rows(pred_sn_pk_1)
 
-model_lm<-readRDS(here::here("output/models/lm_model.rds"))
+# model_lm<-readRDS(here::here("output/models/lm_model.rds"))
+# 
+# 
+# model_lm%>%
+#   augment(newdata = test_data, type.predict = "response")%>%
+#   select(-year)%>%
+#   write_csv(here::here("output/csv/prediction.csv"))
 
-model_lm%>%
-  augment(newdata = test_data, type.predict = "response")%>%
-  select(-year)%>%
+rf_model<-readRDS(here::here("output/models/rf_model.rds"))
+
+test_data%>%
+  mutate(prediction = stats::predict(rf_model, .))%>%
   write_csv(here::here("output/csv/prediction.csv"))
 
 
