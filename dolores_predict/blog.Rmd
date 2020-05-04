@@ -4,26 +4,36 @@ output:
   md_document:
     variant: gfm+space_in_atx_header
     pandoc_args: ["--wrap=none"]
-fig_width: 11 
-fig_height: 8 
+fig_width: 11
+fig_height: 8
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, 
-                      message = FALSE, 
-                      warning = FALSE, 
-                      dpi=300, 
-                      fig.height = 8, 
-                      fig.width = 11, 
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      dpi=300,
+                      fig.height = 8,
+                      fig.width = 11,
                       dev = "jpeg",
                       class.output  = "r-output")
 ```
-I live next to the Dolores River.  It's an often overlooked gem of the southwest.    It runs from just outside Rico, Colorado at its headwaters to the Colorado River outsite Moab, Utah. It's an experience. Most of the river is mellow and beutiful. But two technical rapids keep things interesting
+I live next to the Dolores River.  It's an often overlooked gem of the southwest.    It runs from just outside Rico, Colorado at its headwaters to the Colorado River near Moab, Utah. It's an experience.
+
+As of late the river has become something of a destination for the rafting community. Most sections of the river are mellow and scenic. But two sections have class 4 rapids that keep things interesting: Snaggletooth Rapid and State Line Rapid (also known as the Chicken Raper Rapid).
+
+In 1985 the McPhee Dam was completed, forever changing the flow of the lower Dolores River. Today, farmers and ranchers rely on water from the McPhee Dam to to grow crops and raise livestock.  As a result, the primary goal of reservoir managers is to keep as much water in the reservoir as possible.  Raftable releases are secondary.
+
+This has resulted in several years where the reservoir has not filled and there have been no raftable releases.  Other years reservoir managers say that the ther will be no release and we get a release.
+
+Because the Dolores is so loved in our community, there are a few people who try and predict when the Dolores.  I thought it would be fun to do myself.  Here's how I built my model to predict the number of days the Dolores would run.
 
 ## Load Packages
+
+Here I load packages and set a custom theme. You can skip this part and just add in `set_theme(theme_light)` if you want to skip this part.
 ```{r}
 library(tidyverse) ## For all the data cleaning work.
-library(lubridate) ## For working with dates. 
+library(lubridate) ## For working with dates.
 library(extrafont) ## For Font Graphics
 options(scipen = 999)
 
@@ -49,7 +59,7 @@ t<-theme_light()+
     legend.key.height = unit(0.3, "cm"),
     legend.box = "vertical",
     plot.caption = element_text(color = "#7A7A7A", size = rel(0.9))
-  ) 
+  )
 theme_set(t)
 ```
 # Getting a variable to predict
@@ -70,15 +80,14 @@ bedrock_flow<-flow_data%>%
 bedrock_flow
 ```
 
-I want to predict the raftable days released below McPhee Dam.  To do this I need flow data from a gauge below McPhee Dam.  There are a few to choose from, but the oldest is at Bedrock, CO.  To get the data I used the USGS Water Services REST API. There's an R package that you can used to get the data, but since I'd used the API a few times before and I knew that the data could be returned in tab-separated format, I just used the `readr` function `read_tsv()`. 
-* The first step is to build the URL for the API. I used the USGS Rest API builder tool to get the right data.  I concatenated in todays data using `Sys.Date()` function. 
-* Then used the `read_tsv()` function to pull data from the API skpping the first 35 lines of comments. 
-* We then rename the columns to something we can understand. 
+I want to predict the raftable days released below McPhee Dam.  To do this I need flow data from a gauge below McPhee.  There are a few to choose from, but the oldest is at Bedrock, CO.  To get the data I used the USGS Water Services REST API. There's an R package that you can used to get the data, but since I'd used the API a few times before and I knew that the data could be returned in tab-separated format, I just used the `readr::read_tsv()` function.
+* The first step is to build the URL for the API. I used the USGS Rest API builder tool to get the right data.  I concatenated in todays data using `Sys.Date()` function.
+* Then used the `read_tsv()` function to pull data from the API skpping the first 35 lines of comments.
+* I then renamed the columns to something I could understand.
 * And then convert the site_ids to Characters instead of numbers.  I pulled data from above and below the dams because at the time I thought I might use the data from above the Dam later for another predictive variable.
-* The I drop all the missing values. 
-* Then I subset the data to just below the dam. 
+* Then I drop all the missing values and subset the data to just below the dam.
 
-### Visualize the flow
+### Visualizing the flow
 
 ```{r}
 bedrock_flow%>%
@@ -92,7 +101,7 @@ bedrock_flow%>%
        x = "Year")
 ```
 
-I know from living here that the Dolores has flash flood events in the monsoon season giving the river raftable flows that are not produced by a Dam release.  I want to remove these events from the prediction because they could alter our predictive variable. 
+I know from living here that the Dolores has flash flood events in the monsoon season around the end of August giving the river raftable flows that are not produced by a Dam release.  I want to remove these events from the prediction because they could alter our predictive variable.
 
 ### Subsetting the release
 
@@ -104,23 +113,21 @@ predicted_variable<-bedrock_flow%>%
 
 predicted_variable
 ```
+To get the number of raftable release we subset the flow rates to flows above 800 (cfs - cubic feet per second).
 
+* First we filter the data for flows above 1000 cfs and dated from March to July (most of the monsoons occur from august to October).
+* Then we simply count the number of dates that are left by year.
 
-To get the number of raftable release we subset the flow rates to flows above 1000 (cfs - cubic feet per second).   The Dolores is ratable at 800 cfs, but because bedrock is about 100 miles below the dam and runoff could increase the flows I wanted to give the predictive variable a bit of a buffer.
-
-* First we filter the data for flows above 1000 cfs and dated from March to July (most of the monsoons occur from august to October). 
-* Then we simply count the number of dates that are left by year. 
-
-We now have the variable we want to predict.  Now we need predicters. 
-
-
-
+We now have the variable we want to predict.  Now we need predicters.
 
 # Getting the predictive variables.
 
-## Snow Depth
+There are are many variables that affect reservoir volume.  Current Reservoir volume and snowpack are probably two of the more important variables that are reliably measured.  Snowpack tells us how much water will eventually be coming into the reservoir in the spring and reservoir volume tells us how much water we will need to cause a spill. Spring rain would be another variable that would be great to include, but I don't want to rely on weather forecasts that far out. So we will stick with snowpack and current reservoir volume.
 
+## Snow Depth
+The [SNOTEL (Snow Telemetry)](https://en.wikipedia.org/wiki/SNOTEL) network provides snow data for 730 sites accross the country.  There are several in the Dolores watershed that can give us a bunch of data on snowpack. For this we will use the handy dandy package `library(RNRCS)` (the NRCS is the government agency in the Department of Agriculture that manages the SNOTEL network)
 ### Finding All Snotel Sites in the Dolores Watershed
+First we need to find which SNOTEL sites are within the Dolores River watershed to inform how much water could end up in McPhee reservoir.
 ```{r}
 library(RNRCS)
 meta_data<-grabNRCS.meta(ntwrks = c("SNTL", "SNTLT", "SCAN"))
@@ -130,8 +137,6 @@ meta_data_unlist<-meta_data[[1]]%>%
 
 meta_data_unlist
 ```
-
-The first step in getting data from the a Snotel site is figuring out what sites you need data from.  So the first step was to get a list of Snotel Sites in the US and then subset the sites to just the one that I need. 
 
 **grabNRCS.meta** - grabs all sites within the Snotel ("SNTL"), Snotel Lite, ("SNTLT"), and Scan ("SCAN") systems.  I'm really just interested in the snotel sites, but I wasn't really sure what Snotel Lite or Scan was so I loaded them just in case. `grabNRCS` returns a single list, se we subset just the first item of the list.
 
@@ -143,7 +148,7 @@ dolores_sites<-meta_data_unlist%>%
 dolores_sites
 ```
 
-**dolores_sites** -  We then filter all sites in Colorado ("CO") and detect all of the huc values with 140300. To pull data from the sites we will need a site ID number. The Meta data has the site IDs in a string that contains characters and numbers. 
+**dolores_sites** -  We then filter all sites in Colorado ("CO") and detect all of the huc values with 140300. To pull data from the sites we will need a site ID number. The Meta data has the site IDs in a string that contains characters and numbers.
 
 ```{r}
 dolores_site_ids<-dolores_sites%>%
@@ -154,18 +159,17 @@ dolores_site_ids<-dolores_sites%>%
 dolores_site_ids
 ```
 
-
-**dolores_site_ids** - The last step is to convert the `site_id_num` variable into a vector so that we can pull data from each site in the next step. 
+**dolores_site_ids** - The last step is to convert the `site_id_num` variable into a vector so that we can pull data from each site in the next step.
 
 ## Pulling the data from the snotel sites
 ### Function to Pull All Sites
-First we need a function that we can inject to pull data for each of our sites.  `grabNRCS.data` does not allow you to pull data from more than one site at a time. So we need a function that we can use as we loop over our vector of `site_ids`. 
+First we need a function that we can loop over each of the snotel site IDs and pull data for each of one.  `grabNRCS.data` does not allow you to pull data from more than one site at a time.
 
 ```{r}
 get_snotl_data<-function(site_id){
-  grabNRCS.data(network = "SNTL", 
-              site_id = site_id, 
-              timescale = "daily", 
+  grabNRCS.data(network = "SNTL",
+              site_id = site_id,
+              timescale = "daily",
               DayBgn = '1985-01-01',
               DayEnd = Sys.Date()
               )%>%
@@ -175,12 +179,12 @@ get_snotl_data<-function(site_id){
 ```
 
 To get data from each site we need to use `grabNRCS.data()` function. `grabNRCS.data` takes:
-* network - the network we want to pull from. 
-* the Site ID which we produced a list of in the last step. 
-* DayBgn - The first day you want to pull data from. 
-* DayEnd - the Last date you want data from. Here we use the system data (Today).
+* `network` - the network we want to pull from.
+* the `site_id` which we produced a list of in the last step.
+* `DayBgn` - The first day you want to pull data from.
+* `DayEnd` - the Last date you want data from. Here we use the system data (Today).
 
-We then convert the data to a tibble for better output in Rstudio and add a column with `mutate` with the site_id number for working with the data later. 
+We then convert the data to a tibble for better output in Rstudio and add a column with `mutate` with the site_id number for working with the data later.
 
 ### Getting ALL the data with lapply
 
@@ -193,14 +197,13 @@ all_sntl_data
 
 `lapply` takes:
 * `dolores_site_ids` a vector of values to loop over.
-* `get_snotl_data` a function to inject each of the vector values into one at a time.  
+* `get_snotl_data` a function to inject each of the vector values into one at a time.
 
-`lapply` returns a list so the final step is to `bind_rows` which merges all of the columns. 
-
+`lapply` returns a list so the final step is to `bind_rows` which merges all of the columns.
 
 ### Cleaning the Data
 
-I'm going to predict number of days the Dolores Runs in a year, so I need to convert the snow data from daily data from multiple sites to annual data from all sites.  I'm assuming that max snow water equivalant correlates best with runoff in this dataset.  
+I'm going to predict number of days the Dolores Runs in a year, so I need to convert the snow data from daily data from multiple sites to annual data from all sites.  I'm assuming that max snow water equivalant correlates best with runoff in this dataset so we will use that to summarize each year.
 ```{r}
 se_site<-all_sntl_data%>%
   select(Date, Snow.Depth..in..Start.of.Day.Values, Snow.Water.Equivalent..in..Start.of.Day.Values, site_id_num)%>%
@@ -210,23 +213,41 @@ se_site<-all_sntl_data%>%
   rename(snow_depth = 2, snow_water_eq=3)%>%
   filter(site_id_num %in% c(465, 586, 589, 739))
 
+se_site
+```
+
+* First we select the columns that contain the Date, Snow Depth and Snow water Equivalant.  I don't end up using Snow depth because it only goes back to around 2000 for all sites while snow water equivalant goes back to 1986.
+* `mutate` add a date field that is formatted as a date.
+* `rename` snow depth and snow water equivalant to something more manageable.
+* The last thing we do is subset the sites to only those that have been around since 1986 using `filter`.
+
+Let's take a look at these sites really quick to see how they look.
+
+```{r}
+se_site%>%
+  filter(year(date)>2007)%>%
+  ggplot(aes(date, snow_water_eq, color = as.factor(site_id_num)))+
+  geom_line(size = 1.5, alpha = 0.5)+
+  theme_light()
+```
+
+```{r}
 se_site_year<-se_site%>%
   group_by(year(date), site_id_num)%>%
   summarize(max_se = max(snow_water_eq, na.rm = T))%>%
   ungroup()%>%
   rename(year=1)
 
-se_site
+se_site_year
 ```
 
-* First we select the columns that contain the Date, Snow Depth and Snow water Equivalant.  I don't end up using Snow depth because it only goes back to around 2000 for all sites while snow water equivalant goes back to 1986. 
-* `mutate` add a date field that is formatted as a date.
-* `rename` snow depth and snow water equivalant to something more manageable. 
-* The next several steps are where the sausage is made. First I want the max value for snow water equivalant for each site per year.  To do this, we `group_by` `year(date)` which uses the `date` field to group the data and then. We also want to group by site_id_num so we add that to the `group_by` as well.  
-* We can then summarize by our groups.  Here we want to make a variable caleed max_se which is the max of the `snow_water_eq` field within the group we described above. 
-* Lastly we `ungroup` the data (group_by can cause nasty problems if not ungrouped) and rename the `year(date)` column to `year`. 
+
+* The next several steps are where the sausage is made. First I want the max value for snow water equivalant for each site per year.  To do this, we `group_by` `year(date)` which uses the `date` field to group the data and then. We also want to group by site_id_num so we add that to the `group_by` as well.
+* We can then summarize by our groups.  Here we want to make a variable caleed max_se which is the max of the `snow_water_eq` field within the group we described above.
+* Lastly we `ungroup` the data (group_by can cause nasty problems if not ungrouped) and rename the `year(date)` column to `year`.
 
 ### Combining a subset of sites
+To simplify things we will average the sites.  I think if I did this again I would not average the sites but have each site be a predictor.
 ```{r}
 avg_snwater_eq<-se_site_year%>%
   filter(year>1986)%>%
@@ -236,32 +257,30 @@ avg_snwater_eq<-se_site_year%>%
 
 avg_snwater_eq
 ```
-
-The last step we need to perform is to combine several sites so that we have one snow water equivalant value per year. 
-* Only 4 of the 6 sites in the basin have values all the way back to 1986, the year that the McPhee Dam was put in. We `filter` years greater than 1986, the year the dam was put in, and sites `c(465, 586, 589, 739)`. 
-* We then `group_by` year because we want one value per year. 
-* Then `summarize` the max snow water equivalent (`max_se`) - created in the last step - as a mean of the four site maxes per year. 
+* Only 4 of the 6 sites in the basin have values all the way back to 1986, the year that the McPhee Dam was put in.
+* We then `group_by` year because we want one value per year.
+* Then `summarize` the max snow water equivalent (`max_se`) - created in the last step - as a mean of the four site maxes per year.
 * And then, as always, `ungroup`.
 
 ### Summary of Snotel Snow depth
-Now we have our first predictive variable: average max snow water equivalent four three snotel sites in the Dolores River watershed. 
+Now we have our first predictive variable: average max snow water equivalent four three snotel sites in the Dolores River watershed.
 
-The steps we took to get that data: 
+The steps we took to get that data:
 1. We used the `RNRCS` package to...
 2. Get all sites in the Snotel Network with `grabNRCS.meta()`
-3. We then subset those sites to just those in the Dolores watershed. 
-4. We then used the site_ids to get daily snow data from each site. 
-5. We combined each sites data into one dataframe. 
-6. We then grouped the data to get the max snow water equivalent for each site for each year. 
-7. We then averaged the maxes from four sites to get one average snow water equivalent per year. 
+3. We then subset those sites to just those in the Dolores watershed.
+4. We then used the site_ids to get daily snow data from each site.
+5. We combined each sites data into one dataframe.
+6. We then grouped the data to get the max snow water equivalent for each site for each year.
+7. We then averaged the maxes from four sites to get one average snow water equivalent per year.
 
 ## Prediction of Future Snowpack
-We'll use the {fable} package for timeseries forecasting. 
+We'll use the {fable} package for timeseries forecasting.
 ```{r}
 library(fable) #For prediction
 ```
 
-For forecasting we need an average of all four sites per day.  We want to predict what the average will be.  
+For forecasting we need an average of all four sites per day.  We want to predict what the average will be.
 ```{r}
 avg_sn<-se_site%>%
   filter(year(Date)>1987)%>%
@@ -269,14 +288,14 @@ avg_sn<-se_site%>%
   summarize(avg_sn_eq =  mean(snow_water_eq, rm.na = T))%>%
   ungroup()%>%
   mutate(Date = as.Date(Date))
-  
+
 
 avg_sn
 ```
 
-* We filter years after 1987 because we don't want the year that they were filling the reservior to influence the prediction. 
-* Next we group by `Date` which is daily and then `summarize`, averaging all four sites for that day. We `ungroup` to prevent weird stuff from happening. 
-* And lastly we convert the `Date` column, which for some reaon was converted to a `character`,  to an actual date with `as.Date`. 
+* We filter years after 1987 because we don't want the year that they were filling the reservior to influence the prediction.
+* Next we group by `Date` which is daily and then `summarize`, averaging all four sites for that day. We `ungroup` to prevent weird stuff from happening.
+* And lastly we convert the `Date` column, which for some reaon was converted to a `character`,  to an actual date with `as.Date`.
 
 Let see what it looks like:
 
@@ -285,19 +304,18 @@ avg_sn%>%
   ggplot(aes(Date, avg_sn_eq))+
   geom_line(color = "#1AB8FF", size = 2, alpha = 0.5)+
   labs(title = "Average Snow Water Equivalant",
-       subtitle = "From four Snotel Sites in the Dolores River watershed", 
+       subtitle = "From four Snotel Sites in the Dolores River watershed",
        y = "Avg. Snow Water Equivalant")
 ```
 
-
-To do a timeseries forcast we need to convert the data into `tsibble` format.  I don't know a ton about tsibbles.  I think they are basically just a tibble with an `time` index. 
+To do a timeseries forcast we need to convert the data into `tsibble` format.  I don't know a ton about tsibbles.  I think they are basically just a tibble with an `time` index.
 
 ```{r}
 avg_sn_ts<-avg_sn%>%
   as_tsibble(index = Date)
 ```
 
-Next we will make our model.   I by no means am an expert at forecasting (this took me an embarassingly long time).  Many of my initial tries failed using a variety of other models.  I finally got and auto `ARIMA` forecast to work using fourier.  If you want to learn more about forecasting, check out [Rob Hyndman's Blog](https://robjhyndman.com/hyndsight/fable/).
+Next we will make our model.   I by no means am an expert at forecasting (this took me an embarassingly long time).  Many of my initial tries failed using a variety of other models.  I finally got an auto `ARIMA` forecast to work using fourier.  If you want to learn more about forecasting, check out [Rob Hyndman's Blog](https://robjhyndman.com/hyndsight/fable/).
 ```{r}
 fit<-avg_sn_ts%>%
   model(
@@ -309,15 +327,15 @@ fit%>%
   autoplot(avg_sn_ts%>%filter(year(Date)>2018))+
   geom_line(color = "#ffffff", size = 2)+
   labs(title = "Snowpack Prediction",
-       subtitle = "Dolores River watershed Snotel sites", 
+       subtitle = "Dolores River watershed Snotel sites",
        y = "Avg. Snow Whater Equivalant")
 
 ##saveRDS(fit, "output/models/arima_forecast.rds")
 ```
 
-Looking at the forecast in the `autoplot()` which is just an easy ggplot for forecasting, it looks to me that the forecast looks pretty good, but might be a bit optimistic for the average.  But it's hard to tell. We could get a lot of snow in the end of February or March. It gives us a good range to work with and use in our predictions. 
+Looking at the forecast in the `autoplot()` which is just an easy ggplot for forecasting, it looks to me that the forecast looks pretty good, but might be a bit optimistic for the average.  But it's hard to tell. We could get a lot of snow in the end of February or March. It gives us a good range to work with and use in our predictions.
 
-To use in our prediction we need a max, min and average value for the max snowpack.  
+To use in our prediction we need a max, min and average value for the max snowpack.
 
 ```{r}
 pred_sn_pk<-fit%>%
@@ -335,21 +353,21 @@ pred_sn_pk<-fit%>%
 pred_sn_pk
 
 ```
-* User our model to `forecast()` six months out. 
+* User our model to `forecast()` six months out.
 * `filter` out the `max` value for the average (this isn't perfect but it will work for our purposes).
 * Add a column with higher and lower values based on a 90% confidence interval using the `hilo` function.
-* convert to a tibble. 
-* Select only the values we want. 
+* convert to a tibble.
+* Select only the values we want.
 * `pivot_longer` so that we have a `year` column and a snow_water_equivalant column.
-* Make a `year` column.  
+* Make a `year` column.
 * drop the `Date` column.
 
 ## Reservoir Volume
-
-### Get Daily McPhee Reservoir Volumes 
+The next variable we need is reservoir volume. 
+### Get Daily McPhee Reservoir Volumes
 ```{r}
-bor_data<-grabBOR.data(site_id = "MPHC2000", 
-                       timescale = 'daily', 
+bor_data<-grabBOR.data(site_id = "MPHC2000",
+                       timescale = 'daily',
                        DayBgn = '1985-01-01',
                       DayEnd = Sys.Date())%>%
   as_tibble()%>%
@@ -360,10 +378,10 @@ bor_data<-grabBOR.data(site_id = "MPHC2000",
 bor_data
 ```
 
-We use the `{RNRCS}` package again to get Bureau of Reclemation (BOR - the agency that managed the McPhee dam)data. 
-* The `{RNRCS}` package has a function to grab Bureau of Reclemation data `grabBOR.data()`. It works much the same way as the `grapNRCS.data()` function that we wrapped our own function around above.  However this time, we only needed one site so I just looked it up and put it in instead of using a meta function to get sites like we did with the snotel data. 
-* We convert the data to a tibble (df) convert the date to date format and convert the volume into numeric. 
-* We then subset the columns to just date and reservoir volume. 
+We use the `{RNRCS}` package again to get Bureau of Reclemation (BOR - the agency that managed the McPhee dam)data.
+* The `{RNRCS}` package has a function to grab Bureau of Reclemation data `grabBOR.data()`. It works much the same way as the `grapNRCS.data()` function that we wrapped our own function around above.  However this time, we only needed one site so I just looked it up and put it in instead of using a meta function to get sites like we did with the snotel data.
+* We convert the data to a tibble (df) convert the date to date format and convert the volume into numeric.
+* We then subset the columns to just date and reservoir volume.
 
 ### Summarize data to yearly
 ```{r}
@@ -379,8 +397,8 @@ res_vol
 ```
 
 Here we subset the data to just the winter months and then summarize by year by getting the minimum value for all three months (I originally averaged the months, but getting the min gives a better prediction).
-* First we filter January and February to get that years lowest reservoir values prior to runoff. 
-* We then `group_by()` year and then get the minimul volume from each of the two months. 
+* First we filter January and February to get that years lowest reservoir values prior to runoff.
+* We then `group_by()` year and then get the minimul volume from each of the two months.
 * then we rename the first column to year instead of `year(date)` and filter out all years before 1987.
 
 # Building the Model
@@ -401,9 +419,9 @@ var_df_test<-var_df%>%
 var_df_train
 ```
 
-* To join the datasets we use a full join because not every year has a raftable release and therefore has some year missing.  Both of the other datasets have data for each year and a full join fills any missing variables with NA but keeps all observations. 
+* To join the datasets we use a full join because not every year has a raftable release and therefore has some year missing.  Both of the other datasets have data for each year and a full join fills any missing variables with NA but keeps all observations.
 * The years with NA values for raftable release should be 0, because those are the years without a raftable release and we want to th model to predict when those years are as well.
-* Lastly we make two datasets one to train the model, which includes all years except this year 2020, and test model this year.  
+* Lastly we make two datasets one to train the model, which includes all years except this year 2020, and test model this year.
 
 **Note:** *typically you want to split the data into training and testing datasets so you can train your model with the training dataset and then evaluate it with the testing dataset that it hasn't seen. But here we don't really care that much because this is just fun and we can predict this upcoming release and see if it is right.*
 
@@ -415,46 +433,48 @@ set.seed(1234)
 
 control <- trainControl(method="cv", number=10)
 
-rf_model <- train(raftable_releases~avg_snow_water_e+min_vol, 
-                    data=var_df_train, 
-                    method="rf", 
+rf_model <- train(raftable_releases~avg_snow_water_e+min_vol,
+                    data=var_df_train,
+                    method="rf",
                     tuneLength=3,
                     trControl=control)
 
 rf_model
+
+saveRDS(rf_model, "output/models/rf_model.rds")
 ```
-Here we build a cross validated random forest regression model to go predict number of raftable days. 
-* `meothod = "repeatedcv"` is repeated cross validation where we do 10 cross validations 3 times with a random search.  
-* We use the `train()` functio from caret to fit the model using both predictive variables `avg_snow_water_e` and `min_vol`.  
-* We use Random Forest algorythm `"rf"` with 2000 trees. 
+Here we build a cross validated random forest regression model to go predict number of raftable days.
+* `meothod = "repeatedcv"` is repeated cross validation where we do 10 cross validations 3 times with a random search.
+* We use the `train()` functio from caret to fit the model using both predictive variables `avg_snow_water_e` and `min_vol`.
+* We use Random Forest algorythm `"rf"` with 2000 trees.
 * we try 3 mtry depths (thgere are only two because we have only two variables, but tuneLength of two was not tuning at all for some reason).
 
 ### Evaluating the model
-WARNING: this is not how you should evaluate a model typically like I said above.  
+WARNING: this is not how you should evaluate a model typically like I said above.
 ```{r}
 var_df_train%>%
   mutate(prediction = stats::predict(rf_model, .))%>%
   ggplot(aes(raftable_releases, prediction))+
   geom_point(color = "#1AB8FF", size =4, alpha = 0.6)+
   geom_text(aes(label=year),hjust=-0.3, vjust=-0.3, color = "#FFFFFF")+
-  labs(title = "Predicted vs Actual Raftable Release Days", 
-       x = "Actual Release Days", 
+  labs(title = "Predicted vs Actual Raftable Release Days",
+       x = "Actual Release Days",
        y = "Predicted Release Days",
        subtitle = "Sudo-testing accuracy of RF model")
 ```
 
-Pretty good.  Again, I keep saying this becuase it is really important, we would want to make sure that the model works in out of training sample, but with this dataset, we don't have enough data to do that. 
+Pretty good.  Again, I keep saying this becuase it is really important, we would want to make sure that the model works in out of training sample, but with this dataset, we don't have enough data to do that.
 
 ## So what about this year
 ```{r}
 var_df_test%>%
-  mutate(prediction = predict(rf_model, .)) 
+  mutate(prediction = predict(rf_model, .))
 
 ```
 
-So far the model predicts we will have `r predict(rf_model, var_df_test)` days of raftable flows.  I'd say that is within the margin of error of 0 days looking at past predictions.  But what if we get more snow?  Given that it is February and Peak snow is typically around mid March would be a good assumption. 
+So far the model predicts we will have `r predict(rf_model, var_df_test)` days of raftable flows.  I'd say that is within the margin of error of 0 days looking at past predictions.  But what if we get more snow?  Given that it is February and Peak snow is typically around mid March would be a good assumption.
 
-Let's add the snotel forcast from the ARIMA model above to the predicted dataset. 
+Let's add the snotel forcast from the ARIMA model above to the predicted dataset.
 
 ```{r}
 pred_sn_pk_1<-pred_sn_pk%>%
@@ -479,9 +499,9 @@ test_data%>%
   mutate(prediction = stats::predict(rf_model, .))
 ```
 
-That's a bit of an odd result. The model predicts a greater number of release days for the predicted snow water equivalant of 13.2 than it does for 10.4.  If you look at the last graph though that kind of makes sense.  There is a lot of noise at the beginning of the graph.  
+That's a bit of an odd result. The model predicts a greater number of release days for the predicted snow water equivalant of 13.2 than it does for 10.4.  If you look at the last graph though that kind of makes sense.  There is a lot of noise at the beginning of the graph.
 
-Let's try something a bit simpler, like a linear model.  
+Let's try something a bit simpler, like a linear model.
 
 ```{r}
 model_lm<-glm(raftable_releases~avg_snow_water_e+min_vol, family = "poisson", data = var_df_train)
@@ -491,7 +511,7 @@ model_lm<-glm(raftable_releases~avg_snow_water_e+min_vol, family = "poisson", da
 summary(model_lm)
 ```
 
-This model looks pretty good. 
+This model looks pretty good.
 ```{r}
 model_lm%>%
   augment(data = var_df_train, type.predict = "response")%>%
@@ -503,18 +523,18 @@ model_lm%>%
        y = "Predicted Values",
        x = "Actual Raftable Release Days")
 ```
-This model doesn't fit the data quite as well. Lets see how it predicts the predictions. 
+This model doesn't fit the data quite as well. Lets see how it predicts the predictions.
 ```{r}
 model_lm%>%
   augment(newdata = test_data, type.predict = "response")
 ```
-That looks more rational than the random forest model. The results: 
+That looks more rational than the random forest model. The results:
 * Current snowpack = 5.21 days
 * predicted peak snowpack = 9.6 days.
 * predicted lower snowpack = 4.86 (this really isn't rational considering current is already greater than it).
 * predicted upper snowpack = 18.9 days (let it snow let it snow).
 
-I'll continue to run this as the winter progresses.  We now have a model that we can push into production to predict future data sets. 
+I'll continue to run this as the winter progresses.  We now have a model that we can push into production to predict future data sets.
 
 
 
