@@ -98,7 +98,7 @@ I know from living here that the Dolores has flash flood events in the monsoon s
 
 ```{r}
 predicted_variable<-bedrock_flow%>%
-  filter(flow>1000 & month(date) %in% c(3:7))%>%
+  filter(flow>800 & month(date) %in% c(3:7))%>%
   count(year(date))%>%
   rename(year = 1, raftable_releases = 2)
 
@@ -368,7 +368,7 @@ We use the `{RNRCS}` package again to get Bureau of Reclemation (BOR - the agenc
 ### Summarize data to yearly
 ```{r}
 res_vol<-bor_data%>%
-  filter(month(date) %in% c(01, 02))%>%
+  filter(month(date) %in% c(01, 02, 03))%>%
   group_by(year(date))%>%
   summarize(min_vol = min(res_volume, na.rm = T))%>%
   ungroup()%>%

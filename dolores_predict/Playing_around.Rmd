@@ -1,0 +1,77 @@
+---
+title: "Messing Around"
+author: "Michael Schmidt"
+date: "3/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Ran the other skript and then: 
+```{r}
+data<-bor_data%>%
+  filter(month(date)<=5, year(date)>1986)%>%
+  group_by(year(date))%>%
+  summarize(min = min(res_volume))%>%
+  ungroup()%>%
+  rename(year = 1)%>%
+  left_join(
+    se_site%>%
+      filter(year(date)>1986)%>%
+      group_by(year(date), site_id_num)%>%
+      summarize(snow_water_eq_max = max(snow_water_eq))%>%
+      ungroup()%>%
+      rename(year=1)%>%
+      group_by(year)%>%
+      summarize(avg_max_sn_eq = mean(snow_water_eq_max))%>%
+      ungroup()
+  )%>%
+  left_join(predicted_variable)%>%
+  left_join(
+    bedrock_flow%>%
+      filter(month(date) %in% c(3:7) &flow>800)%>%
+      group_by(year(date))%>%
+      summarize(flow_avg = mean(flow, na.rm = T), max_flow = max(flow, na.rm = T), min_flow = min(flow, na.rm = T))%>%
+      ungroup()%>%
+      rename(year = 1)
+  )%>%
+  mutate(raftable_releases = ifelse(is.na(raftable_releases), 0, raftable_releases))
+
+data%>%
+  ggplot(aes(min, avg_max_sn_eq))+
+  geom_point(aes(size = raftable_releases), color = "black", alpha = 0.8)+
+  scale_size(breaks = c(0,20, 40, 60), range = c(1,15))+
+  geom_text(aes(label=year),hjust=-0.3, vjust=-0.3, color = "#222222")+
+  theme_minimal()+
+  labs(title = "Snow Water Equivalant vs. Annual Minimum Volume in McPhee Reservoir",
+       x = "McPhee Volume (ac-ft)",
+       y = "Snow Water Equivalant",
+       size = "# of days > 800 cfs"
+       )
+  
+
+se_site_year%>%
+  filter(year>2010)%>%
+  group_by(year)%>%
+  summarize(mean = mean(max_se))
+
+se_site%>%
+  filter(year(date)>2010)%>%
+  group_by(year(date), site_id_num)%>%
+  summarize(snow_water_eq_max = max(snow_water_eq))%>%
+  ungroup()%>%
+  rename(year=1)%>%
+  group_by(year)%>%
+  summarize(avg_max_sn_eq = mean(snow_water_eq_max))%>%
+  ungroup()
+
+flow_data%>%
+  filter(month(date)<8 &flow>800)%>%
+  group_by(year(date))%>%
+  summarize(flow_avg = mean(flow), max_flow = max(flow), min_flow = min(flow))%>%
+  ungroup()%>%
+  rename(year = 1)
+```
+
