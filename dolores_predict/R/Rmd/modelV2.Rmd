@@ -1,0 +1,174 @@
+---
+title: "Dolores Predict V2.0"
+author: "Michael Schmidt"
+date: "5/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(RNRCS)
+```
+
+```{r}
+url<-paste0("https://waterservices.usgs.gov/nwis/dv/?format=rdb&sites=09169500,%2009166500&startDT=1985-02-01&endDT=", Sys.Date(), "&statCd=00003&siteType=ST&siteStatus=all")
+
+flow_data<-read_tsv(url, skip = 35)%>%
+  select(2:5)%>%
+  rename(site_id = 1, date = 2, flow=3, code = 4)%>%
+  mutate(site_id = ifelse(site_id == "09166500", "Dolores", "Bedrock"))%>%
+  drop_na()
+
+bedrock_flow<-flow_data%>%
+  filter(site_id == "Bedrock"& year(date)>1986)%>%
+  select(-code)
+
+bedrock_flow
+
+predicted_variable<-bedrock_flow%>%
+  filter(flow>800 & month(date) %in% c(3:7))%>%
+  count(year(date))%>%
+  rename(year = 1, raftable_releases = 2)
+
+predicted_variable
+```
+
+```{r}
+site_list<-grabNRCS.meta(ntwrks = c("SNTL", "SNTLT", "SCAN"))[[1]]%>%
+  as_tibble()%>%
+  filter(state =="CO", str_detect(huc, "140300"))%>%
+  mutate(site_id_num = as.numeric(str_match_all(site_id, "[0-9]+")))%>%
+  pull(site_id_num)%>%
+  unlist()%>%
+  as.numeric()
+
+site_list
+
+get_snotl_data<-function(site_id){
+  grabNRCS.data(network = "SNTL",
+              site_id = site_id,
+              timescale = "daily",
+              DayBgn = '1985-01-01',
+              DayEnd = Sys.Date()
+              )%>%
+    as_tibble()%>%
+    mutate(site_id_num = site_id)
+}
+
+se_site<-lapply(site_list, get_snotl_data)%>%
+  bind_rows()%>%
+  select(Date, Snow.Depth..in..Start.of.Day.Values, Snow.Water.Equivalent..in..Start.of.Day.Values, site_id_num)%>%
+  mutate(
+    date = as.Date(Date)
+    )%>%
+  rename(snow_depth = 2, snow_water_eq=3)%>%
+  filter(site_id_num %in% c(465, 586, 589, 739))
+
+se_site_by_date<-se_site%>%
+  select(-Date, -snow_depth)%>%
+  filter(year(date)>1985)%>%
+  group_by(date)%>%
+  summarize(avg_eq = mean(snow_water_eq))%>%
+  ungroup()
+```
+
+```{r}
+bor_data<-grabBOR.data(site_id = "MPHC2000",
+                       timescale = 'daily',
+                       DayBgn = '1985-01-01',
+                      DayEnd = Sys.Date())%>%
+  as_tibble()%>%
+  mutate(date = as.Date(Date),
+         res_volume = as.numeric(`Reservoir Storage Volume (ac_ft) Start of Day Values`))%>%
+  select(date, res_volume)
+
+bor_data
+```
+
+```{r}
+data<-se_site_by_date%>%
+  left_join(bor_data)
+
+data%>%
+  filter(month(date)>8 & avg_eq==0)%>%
+  group_by(year(date))%>%
+  filter(date==max(date))%>%
+  View()
+
+new_raftable_releases<-bor_data%>%
+  group_by(year(date))%>%
+  summarize(mean=mean(res_volume))%>%
+  rename(year=1)%>%
+  full_join(predicted_variable)%>%
+  mutate(raftable_releases=ifelse(is.na(raftable_releases), 0, raftable_releases))%>%
+  select(year, raftable_releases)
+
+predicted_variable%>%
+  full_join()
+
+predicted_data<-data%>%
+  mutate(calc_year = ifelse(month(date)>9, year(date)+1, year(date)))%>%
+  left_join(new_raftable_releases, by=c("calc_year"="year"))%>%
+  drop_na(raftable_releases)%>%
+  mutate(j_day = yday(date))%>%
+  filter(calc_year>1987)%>%
+  drop_na()%>%
+  filter(avg_eq != 0)
+
+predicted_data%>%
+  ggplot(aes(raftable_releases))+
+  geom_histogram()
+  
+```
+
+```{r}
+library(caret)
+
+set.seed(1234)
+
+control <- trainControl(method="cv", number=10)
+
+rf_model <- train(raftable_releases~avg_eq+res_volume+j_day,
+                    data=predicted_data,
+                    method="rf",
+                    tuneLength=2,
+                    trControl=control)
+
+rf_model
+```
+
+```{r}
+predicted_data%>%
+  mutate(prediction = stats::predict(rf_model, .))%>%
+  ggplot(aes(raftable_releases, prediction))+
+  geom_point(color = "#1AB8FF", size =4, alpha = 0.6)+
+  #geom_text(aes(label=year),hjust=-0.3, vjust=-0.3, color = "#FFFFFF")+
+  labs(title = "Predicted vs Actual Raftable Release Days",
+       x = "Actual Release Days",
+       y = "Predicted Release Days",
+       subtitle = "Sudo-testing accuracy of RF model")
+
+predicted_data%>%
+  mutate(prediction = stats::predict(rf_model, .))%>%
+  filter(calc_year == 1995)%>%
+  ggplot(aes(date, prediction))+
+  geom_line()
+```
+
+```{r}
+library(broom)
+model2<-lm(raftable_releases~avg_eq+res_volume+j_day, data=predicted_data)
+summary(model2)
+
+model2%>%
+  augment(data = predicted_data, type.predict = "response", conf.level = 0.95)%>%
+  ggplot(aes(raftable_releases, .fitted))+
+  geom_point()
+```
+
