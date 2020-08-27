@@ -1,0 +1,64 @@
+---
+title: "Caribou GPS Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Libraries
+
+```{r}
+library(tidyverse)
+library(sf)
+library(elevatr)
+theme_set(theme_minimal())
+```
+
+## Loading the data
+Using the tidytuesdayR package. 
+
+```{r}
+tuesdata <- tidytuesdayR::tt_load(2020, week = 26)
+locations <- tuesdata$locations
+individuals <- tuesdata$individuals
+```
+
+```{r}
+locations%>%
+  ggplot(aes(longitude, latitude, color = study_site))+
+  geom_point()
+
+locations%>%
+  count(animal_id)
+
+locations%>%
+  select(longitude, latitude)%>%
+  rename(x=longitude, y=latitude)%>%
+  st_as_sf(coords=c("x", "y"))%>%
+  as("Spatial")
+```
+
+Preparing data for resource selection function
+```{r}
+elev_raster<-get_elev_raster(
+  locations%>%
+    select(longitude, latitude)%>%
+    rename(x=longitude, y=latitude)%>%
+    st_as_sf(coords=c("x", "y"), crs="+proj=longlat +datum=WGS84")%>%
+    as("Spatial"),
+  z = 7
+)
+
+plot(elev_raster)
+plot(locations%>%
+    select(longitude, latitude)%>%
+    rename(x=longitude, y=latitude)%>%
+    st_as_sf(coords=c("x", "y"), crs="+proj=longlat +datum=WGS84")%>%
+    as("Spatial"), add=T)
+
+?st_as_sf()
+```
+
+

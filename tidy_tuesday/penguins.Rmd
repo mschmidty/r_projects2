@@ -1,0 +1,16 @@
+---
+title: "Penguins"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+
+penguins <- tidytuesdayR::tt_load('2020-07-28')
+penguins_cl <- tuesdata$penguins
+```
+
