@@ -1,0 +1,93 @@
+---
+title: "Ridgline plot"
+author: "Michael Schmidt"
+date: "9/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(elevatr)
+library(rnaturalearth)
+library(raster)
+library(conflicted)
+library(ggridges)
+library(schmidtytheme)
+library(here)
+
+theme_set(theme_schmidt())
+
+conflict_prefer("select", "dplyr")
+conflict_prefer("extract", "raster")
+conflict_prefer("filter", "dplyr")
+```
+
+```{r}
+colorado<-ne_states("United States of America", returnclass="sf")%>%
+  filter(name=="Colorado")
+
+state_dem<-get_elev_raster(as(colorado, "Spatial"), z = 6)%>%
+  crop(colorado)
+
+plot(state_dem)
+
+background_color = "#121212"
+
+state_dem%>%
+  crop(extent(-110.9452, -105.7399, 36.99985, 38.00165))%>%
+  rasterToPoints()%>%
+  as_tibble()%>%
+  rename(z=3)%>%
+  mutate(z=z-min(z))%>%
+  ggplot(aes(x, y, height=z, group=y))+
+  geom_density_ridges(stat = "identity", scale = 20, color = "white", fill = background_color)+
+  labs(x="",
+       y = "")+
+  theme(
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    panel.background=element_rect(fill = "transparent", colour = NA),
+    plot.background = element_rect(fill=background_color),
+    panel.grid.major = element_line(colour = "transparent"),
+    panel.grid.minor = element_line(color = "transparent")
+  )
+
+extent(-109.0452, -106.0399, 36.99985, 38.00165)
+
+```
+
+#
+```{r}
+utah<-ne_states("United States of America", returnclass="sf")%>%
+  filter(name=="Utah")
+
+utah_dem<-get_elev_raster(as(utah, "Spatial"), z = 6)%>%
+  crop(utah)
+
+utah_dem%>%
+  crop(extent(-112.5, -111.3, 40, 41.5))%>%
+  rasterToPoints()%>%
+  as_tibble()%>%
+  rename(z=3)%>%
+  mutate(z=z-min(z))%>%
+  ggplot(aes(x, y, height=z, group=y))+
+  geom_density_ridges(stat = "identity", scale = 20, color = "white", fill = background_color)+
+  labs(x="",
+       y = "")+
+  theme(
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    panel.background=element_rect(fill = "transparent", colour = NA),
+    plot.background = element_rect(fill=background_color, color = NA),
+    panel.grid.major = element_line(colour = "transparent"),
+    panel.grid.minor = element_line(color = "transparent")
+  )+
+  ggsave("G:/r_scripts/r_projects2/maps/plots/rige_plot_salt_lake.png", h=17, w=11, type="cairo")
+
+
+```
+40°41'55.0"N 111°54'25.8"W

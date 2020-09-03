@@ -1,0 +1,42 @@
+---
+title: "Crop Yeilds"
+author: "Michael Schmidt"
+date: "9/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(janitor)
+
+
+theme_set(schmidtytheme::theme_schmidt())
+
+tuesdata <- tidytuesdayR::tt_load(2020, week = 36)
+
+arable_land_pin<-tuesdata$arable_land_pin
+cereal_crop_yield_vs_fertilizer_application<-tuesdata$cereal_crop_yield_vs_fertilizer_application%>%
+  clean_names()
+cereal_yields_vs_tractor_inputs_in_agriculture<-tuesdata$cereal_yields_vs_tractor_inputs_in_agriculture
+key_crop_yields<-tuesdata$key_crop_yields
+land_use_vs_yield_change_in_cereal_production<-tuesdata$land_use_vs_yield_change_in_cereal_production
+```
+
+
+# Fertilizer
+```{r}
+cereal_crop_yield_vs_fertilizer_application%>%
+  filter(!is.na(code))%>%
+  ggplot(aes(year, cereal_yield_tonnes_per_hectare ))+
+  geom_line(aes(group = as.factor(entity)), alpha = 0.6, size = 1.3)
+
+cereal_crop_yield_vs_fertilizer_application%>%
+  filter(!is.na(code))%>%
+  ggplot(aes(year, nitrogen_fertilizer_use_kilograms_per_hectare ))+
+  geom_line(aes(group = as.factor(entity)), alpha = 0.6, size = 1.3)
+```
+
