@@ -14,6 +14,13 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(lubridate)
 library(RNRCS)
+library(schmidtytheme)
+library(extrafont)
+##loadfonts(device="win")
+loadfonts()
+theme_set(theme_schmidt()+
+            theme(text = element_text(family="Public Sans"),
+                  plot.title = element_text(family="Abril Fatface")))
 ```
 
 ```{r}
@@ -89,6 +96,41 @@ bor_data<-grabBOR.data(site_id = "MPHC2000",
   select(date, res_volume)
 
 bor_data
+
+bor_annual_data<-bor_data%>%
+  mutate(year = year(date), day = yday(date))
+
+bor_annual_data_2020<-bor_annual_data%>%
+  filter(year == 2020)
+
+ggplot()+
+  geom_line(data = bor_annual_data, aes(day, res_volume, color = as.factor(year)))+
+  geom_line(data = bor_annual_data_2020, aes(day, res_volume), size = 2)
+```
+
+## Days until runoff
+```{r}
+average_runoff_date<-bedrock_flow%>%
+  filter(flow>800)%>%
+  arrange(date)%>%
+  group_by(year(date))%>%
+  slice(1:3)%>%
+  ungroup()%>%
+  mutate(j_day = yday(date))%>%
+  pull(j_day)%>%
+  mean()%>%
+  round()
+
+average_runoff_date_end<-bedrock_flow%>%
+  filter(flow>800)%>%
+  arrange(date)%>%
+  group_by(year(date))%>%
+  slice(tail(row_number(),3))%>%
+  ungroup()%>%
+  mutate(j_day = yday(date))%>%
+  pull(j_day)%>%
+  mean()%>%
+  round()
 ```
 
 ```{r}
@@ -98,8 +140,7 @@ data<-se_site_by_date%>%
 data%>%
   filter(month(date)>8 & avg_eq==0)%>%
   group_by(year(date))%>%
-  filter(date==max(date))%>%
-  View()
+  filter(date==max(date))
 
 new_raftable_releases<-bor_data%>%
   group_by(year(date))%>%
@@ -118,47 +159,101 @@ predicted_data<-data%>%
   drop_na(raftable_releases)%>%
   mutate(j_day = yday(date))%>%
   filter(calc_year>1987)%>%
+  filter(month(date)>11 | month(date)<4)%>%
   drop_na()%>%
-  filter(avg_eq != 0)
+  filter(avg_eq != 0)%>%
+  mutate(num_days_to_runoff = case_when(
+    j_day>average_runoff_date_end & j_day<= 365 ~ 365-j_day+average_runoff_date, 
+    j_day>=average_runoff_date & j_day <= average_runoff_date_end ~ 0,
+    j_day>0 & j_day<average_runoff_date~average_runoff_date-j_day)
+    )%>%drop_na()
 
-predicted_data%>%
-  ggplot(aes(raftable_releases))+
-  geom_histogram()
+
+train_data<-predicted_data%>%
+  filter(calc_year!=2020, calc_year!=2019)
+test_data<-predicted_data%>%
+  filter(calc_year %in% c(2020,2019))
   
 ```
 
 ```{r}
 library(caret)
+library(doParallel)
 
 set.seed(1234)
 
 control <- trainControl(method="cv", number=10)
 
+no_cores <- detectCores() - 1
+
+# create the cluster for caret to use
+#cl <- makePSOCKcluster(no_cores)
+cl <- parallel::makeCluster(no_cores, setup_strategy = "sequential")
+registerDoParallel(cl)
+
+
+
 rf_model <- train(raftable_releases~avg_eq+res_volume+j_day,
-                    data=predicted_data,
-                    method="rf",
-                    tuneLength=2,
-                    trControl=control)
+                  data=train_data,
+                  method="rf",
+                  tuneLength=2,
+                  trControl=control,
+                  fitBest = FALSE,
+                  returnData = TRUE,
+                  ntree=1500
+                  )
+
+stopCluster(cl)
+
 
 rf_model
 ```
 
 ```{r}
-predicted_data%>%
+train_data%>%
   mutate(prediction = stats::predict(rf_model, .))%>%
-  ggplot(aes(raftable_releases, prediction))+
-  geom_point(color = "#1AB8FF", size =4, alpha = 0.6)+
+  ggplot(aes(raftable_releases, prediction, color=num_days_to_runoff))+
+  geom_point( size =4, alpha = 0.2)+
   #geom_text(aes(label=year),hjust=-0.3, vjust=-0.3, color = "#FFFFFF")+
   labs(title = "Predicted vs Actual Raftable Release Days",
        x = "Actual Release Days",
        y = "Predicted Release Days",
        subtitle = "Sudo-testing accuracy of RF model")
 
-predicted_data%>%
-  mutate(prediction = stats::predict(rf_model, .))%>%
-  filter(calc_year == 1995)%>%
-  ggplot(aes(date, prediction))+
-  geom_line()
+train_data%>%
+  mutate(prediction = predict(rf_model, .))%>%
+  filter(calc_year == 2020)%>%
+  ggplot(aes(prediction))+
+  geom_histogram()
+```
+
+
+## predicted probability
+```{r}
+test_data_2020<-test_data%>%
+  filter(calc_year==2020)
+
+predict_all<-function(data, model){
+  
+  prediction<-predict(model$finalModel, data, predict.all=TRUE)
+  
+  as.numeric(prediction$individual[1,])%>%
+    as_tibble()%>%
+    mutate(date=pull(data,date))
+}
+
+all_results<-by(test_data_2020,1:nrow(test_data_2020), rf_model, FUN=predict_all)%>%
+  do.call("rbind", .)
+
+all_results%>%
+  ggplot(aes(date,value))+
+  geom_point(size=5, alpha=0.4)+
+  geom_smooth()
+```
+## predicted probability on a set of dates. 
+
+```{r}
+predicted_data
 ```
 
 ```{r}
@@ -171,4 +266,247 @@ model2%>%
   ggplot(aes(raftable_releases, .fitted))+
   geom_point()
 ```
+
+
+## TidyModels Version
+Linear Model First
+```{r}
+library(tidymodels)
+library(poissonreg)
+
+lm_mod <- linear_reg() %>% 
+  set_engine("lm")
+
+lm_fit <- lm_mod %>% 
+  fit(raftable_releases~avg_eq+res_volume+j_day, data = train_data)
+
+mean_pred <- predict(lm_fit, new_data = test_data)
+
+conf_int_pred <- predict(lm_fit, 
+                         new_data = test_data, 
+                         type = "conf_int")
+
+plot_data <- test_data %>% 
+  bind_cols(mean_pred) %>% 
+  bind_cols(conf_int_pred)
+
+plot_data%>%
+  ggplot(aes(raftable_releases, .pred))+
+  geom_point(size=5, alpha=0.4)
+
+train_data%>%
+  bind_cols(predict(lm_fit, train_data))%>%
+  ggplot()+
+  geom_point(aes(calc_year, .pred),size=5, alpha=0.3)+
+  geom_point( aes(calc_year, raftable_releases), size=5, color="red")
+``` 
+## Poisson Regression
+```{r}
+library(poissonreg)
+p_lm<-poisson_reg()%>%
+  set_engine("glm")%>%
+  translate()
+
+p_lm_fit<-p_lm%>%
+  fit(raftable_releases~avg_eq+res_volume+num_days_to_runoff, data = train_data)
+
+train_data%>%
+  bind_cols(predict(p_lm_fit, train_data))%>%
+  ggplot()+
+  geom_point(aes(calc_year, .pred),size=5, alpha=0.3)+
+  geom_point( aes(calc_year, raftable_releases), size=5, color="red")
+
+test_data%>%
+  bind_cols(predict(p_lm_fit, test_data))%>%
+  ggplot()+
+  geom_point(aes(calc_year, .pred),size=5, alpha=0.3)+
+  geom_point( aes(calc_year, raftable_releases), size=5, color="red")
+```
+## Fandom Forest with Tidymodels
+```{r}
+set.seed(123)
+rf_mod <- rand_forest(trees = 1500) %>% 
+  set_engine("ranger") %>% 
+  set_mode("regression")
+
+rf_fit<-rf_mod%>%
+  fit(raftable_releases~avg_eq+res_volume+j_day, data = train_data)
+
+train_data%>%
+  bind_cols(predict(rf_fit, train_data))%>%
+  ggplot()+
+  geom_point(aes(calc_year, .pred),size=5, alpha=0.05)+
+  geom_point( aes(calc_year, raftable_releases), size=2, color="red")
+
+test_data%>%
+  bind_cols(predict(rf_fit, test_data))%>%
+  ggplot()+
+  geom_point(aes(as.factor(calc_year), .pred),size=5, alpha=0.1)+
+  geom_point( aes(as.factor(calc_year), raftable_releases), size=2, color="red")
+```
+
+## Cross Validation and tune
+```{r}
+
+set.seed(123)
+cell_split <- initial_split(train_data , 
+                            strata = calc_year)
+train <- training(cell_split)
+test  <- testing(cell_split)
+
+rf_mod <- rand_forest(
+  mtry = tune(),
+  trees = 1500,
+  min_n = tune()
+) %>% 
+  set_engine("ranger") %>% 
+  set_mode("regression")
+
+set.seed(345)
+folds <- vfold_cv(train, v = 10, strata=calc_year)
+
+rf_wf <- 
+  workflow() %>%
+  add_model(rf_mod) %>%
+  add_formula(raftable_releases ~ avg_eq+res_volume+j_day)
+
+
+set.seed(345)
+doParallel::registerDoParallel()
+tune_res <- tune_grid(
+  rf_wf,
+  resamples = folds,
+  grid = 20
+)
+
+tune_res%>%
+  collect_metrics()%>%
+  mutate(mtry = factor(mtry)) %>%
+  ggplot(aes(min_n, mean, color=mtry))+
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2)
+
+tune_res %>%
+  show_best("rmse")
+
+best_tree <- tune_res %>%
+  select_best("rmse")
+
+
+final_wf <- 
+  rf_wf %>% 
+  finalize_workflow(best_tree)
+
+final_wf
+
+final_rf <- 
+  final_wf %>%
+  fit(data = train)
+
+final_rf%>%
+  collect_metrics()
+
+final_fit <- 
+  final_wf %>%
+  last_fit(cell_split)
+
+final_fit2<-final_model%>%
+  fit(raftable_releases~avg_eq+res_volume+j_day, data = train_data)
+
+
+
+test_data%>%
+  bind_cols(predict(final_rf, test_data))%>%
+  ggplot()+
+  geom_point(aes(as.factor(calc_year), .pred),size=5, alpha=0.1)+
+  geom_point( aes(as.factor(calc_year), raftable_releases), size=2, color="red")
+
+```
+
+##XGboost
+```{r}
+
+xgb_spec <- boost_tree(
+  trees = 1000, 
+  tree_depth = tune(), min_n = tune(), 
+  loss_reduction = tune(),                     ## first three: model complexity
+  sample_size = tune(), mtry = tune(),         ## randomness
+  learn_rate = tune(),                         ## step size
+) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+xgb_grid <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), train),
+  learn_rate(),
+  size = 30
+)
+
+xgb_wf <- workflow() %>%
+  add_formula(raftable_releases ~ avg_eq+res_volume+j_day) %>%
+  add_model(xgb_spec)
+
+xgb_res <- tune_grid(
+  xgb_wf,
+  resamples = folds,
+  grid = xgb_grid,
+  control = control_grid(save_pred = TRUE)
+)
+
+xgb_res%>%
+  collect_metrics()%>%
+  mutate(mtry = factor(mtry)) %>%
+  ggplot(aes(min_n, mean, color=mtry))+
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2)
+
+xgb_res %>%
+  collect_metrics() %>%
+  filter(.metric == "rmse") %>%
+  select(mean, mtry:sample_size) %>%
+  pivot_longer(mtry:sample_size,
+               values_to = "value",
+               names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "rmse")
+
+show_best(xgb_res, "rmse")
+
+best_rmse <- select_best(xgb_res, "rmse")
+best_rmse
+
+final_xgb <- finalize_workflow(
+  xgb_wf,
+  best_rmse
+)
+
+library(vip)
+
+final_xgb %>%
+  fit(data = train) %>%
+  pull_workflow_fit() %>%
+  vip(geom = "point")
+
+last_xgb <- 
+  final_xgb %>%
+  fit(data = train)
+
+final_res <- last_fit(final_xgb, cell_split)
+
+test_data%>%
+  bind_cols(predict(last_xgb, test_data))%>%
+  ggplot()+
+  geom_point(aes(as.factor(calc_year), .pred, color=num_days_to_runoff),size=5, alpha=0.1)+
+  geom_point( aes(as.factor(calc_year), raftable_releases), size=2, color="red")
+```
+
 

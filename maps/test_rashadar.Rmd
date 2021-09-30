@@ -1,0 +1,38 @@
+---
+title: "Southwest Rashader"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(raster)
+library(elevatr)
+library(tidyverse)
+library(sf)
+topo<-brick("data/usgs/CO_Cortez_466833_1958_250000_geo_tif/CO_Cortez_466833_1958_250000_geo.tif")
+
+plotRGB(topo)
+
+ext(topo)%>%
+  as.vector()
+
+dem<-get_elev_raster(, "SpatialPolygons"), z=7)
+
+xcoord<-c(-109165.9, -109165.9, 109824.4, 109824.4, -109165.9)
+ycoord<-c(-26306.3,  126898.0, -26306.3,  126898.0, -26306.3)
+
+coords<-matrix(c(-109165.9,-26306.3,-109165.9,126898.0, 109824.4,126898.0, 109824.4,-26306.3,-109165.9, -26306.3), ncol=2, byrow=T)
+
+st_polygon(list(coords))%>%
+  st_set_crs(crs(topo, proj4=T))
+
+str(ext(topo))
+
+vect(topo)
+
+```
+

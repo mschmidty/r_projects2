@@ -4,3 +4,7 @@
 .tiff
 tidy_tuesday/mapchalange/data/
 .Rproj.user
+maps/data/
+tidy_tuesday/data/InteragencyFirePerimeterHistory.dbf
+tidy_tuesday/data/InteragencyFirePerimeterHistory.shp
+tidy_tuesday/

@@ -1,0 +1,56 @@
+---
+title: "Wildfires"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(tidyverse)
+library(geojsonR)
+library(geojsonsf)
+library(USAboundaries)
+
+theme_set(theme_schmidt())
+```
+
+This failed due to the file being too large
+```{r}
+wildfires<-geojson_sf("https://opendata.arcgis.com/datasets/5da472c6d27b4b67970acc7b5044c862_0.geojson")
+
+wf_cl<-wildfires%>%
+  filter(GISAcres > 1000)%>%
+  st_transform(3857)%>%
+  st_simplify()
+
+?st_simplify()
+
+ggplot()+
+  geom_sf(data=select(wf_cl, GISAcres))
+
+us<-us_states()%>%
+  filter(name!="Hawaii" & name!="Puerto Rico")
+
+us_states()%>%
+  filter()
+  as_tibble()%>%
+  View()
+
+ggplot()+
+  geom_sf(data=us)+
+  coord_sf(xlim=c(-177, -70))
+
+```
+
+```{r}
+hist_fires<-geojson_sf("https://opendata.arcgis.com/datasets/4454e5d8e8c44b0280258b51bcf24794_0.geojson")
+
+hist_fires%>%
+  as_tibble()
+```
+
+
+
