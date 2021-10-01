@@ -59,10 +59,8 @@ state_dem%>%
     panel.grid.major = element_line(colour = "transparent"),
     panel.grid.minor = element_line(color = "transparent")
   )
-
 ```
 
-#
 ```{r}
 utah<-ne_states("United States of America", returnclass="sf")%>%
   filter(name=="Utah")
@@ -176,5 +174,3 @@ utah_dem%>%
     panel.grid.minor = element_line(color = "transparent")
   )
 ```
-
-

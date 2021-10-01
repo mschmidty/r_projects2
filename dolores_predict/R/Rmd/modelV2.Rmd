@@ -133,6 +133,31 @@ average_runoff_date_end<-bedrock_flow%>%
   round()
 ```
 
+## Days until runoff
+```{r}
+average_runoff_date<-bedrock_flow%>%
+  filter(flow>800)%>%
+  arrange(date)%>%
+  group_by(year(date))%>%
+  slice(1:3)%>%
+  ungroup()%>%
+  mutate(j_day = yday(date))%>%
+  pull(j_day)%>%
+  mean()%>%
+  round()
+
+average_runoff_date_end<-bedrock_flow%>%
+  filter(flow>800)%>%
+  arrange(date)%>%
+  group_by(year(date))%>%
+  slice(tail(row_number(),3))%>%
+  ungroup()%>%
+  mutate(j_day = yday(date))%>%
+  pull(j_day)%>%
+  mean()%>%
+  round()
+```
+
 ```{r}
 data<-se_site_by_date%>%
   left_join(bor_data)
@@ -168,11 +193,14 @@ predicted_data<-data%>%
     j_day>0 & j_day<average_runoff_date~average_runoff_date-j_day)
     )%>%drop_na()
 
-
 train_data<-predicted_data%>%
   filter(calc_year!=2020, calc_year!=2019)
 test_data<-predicted_data%>%
   filter(calc_year %in% c(2020,2019))
+
+predicted_data%>%
+  ggplot(aes(raftable_releases))+
+  geom_histogram()
   
 ```
 
